@@ -1,0 +1,221 @@
+
+running Cu5_Ar_0p2V_cyclic_voltammatry_integrals.py (front-panel script at the bottom)
+
+ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  263.578  263.578 <string>:2(<module>)
+      240    0.000    0.000    0.007    0.000 _methods.py:25(_amax)
+      240    0.000    0.000    0.011    0.000 _methods.py:28(_amin)
+    25440    0.083    0.000    0.090    0.000 _methods.py:43(_count_reduce_items)
+    25440    0.156    0.000    1.687    0.000 _methods.py:53(_mean)
+      240    0.001    0.000    0.008    0.000 fromnumeric.py:2200(amax)
+      240    0.002    0.000    0.012    0.000 fromnumeric.py:2300(amin)
+    25440    0.156    0.000    1.842    0.000 fromnumeric.py:2843(mean)
+      239    0.000    0.000    0.000    0.000 fromnumeric.py:506(transpose)
+     1681    0.017    0.000    0.077    0.000 iostream.py:180(schedule)
+     1440    0.001    0.000    0.002    0.000 iostream.py:284(_is_master_process)
+     1440    0.001    0.000    0.008    0.000 iostream.py:297(_schedule_flush)
+     1440    0.005    0.000    0.085    0.000 iostream.py:342(write)
+     1681    0.001    0.000    0.001    0.000 iostream.py:87(_event_pipe)
+    26157    0.013    0.000    1.244    0.000 numeric.py:484(asanyarray)
+      239    0.076    0.000    0.437    0.002 pilatus.py:132(get_map_xyz)
+      239    0.008    0.000    0.925    0.004 pilatus.py:164(get_map_xyz_prime)
+      239    0.839    0.004    1.768    0.007 pilatus.py:233(get_map_tth)
+      240    1.709    0.007  263.486    1.098 pilatus.py:248(tth_spectrum)
+    33120  258.118    0.008  258.118    0.008 pilatus.py:296(<listcomp>)
+        1    0.003    0.003  263.578  263.578 scan_images.py:162(integrate_peaks)
+        1    0.000    0.000    0.000    0.000 scan_images.py:186(__len__)
+      239    0.003    0.000    0.211    0.001 shape_base.py:282(stack)
+      239    0.001    0.000    0.001    0.000 shape_base.py:333(<listcomp>)
+      956    0.000    0.000    0.000    0.000 shape_base.py:337(<genexpr>)
+      239    0.001    0.000    0.001    0.000 shape_base.py:349(<listcomp>)
+      717    0.007    0.000    0.147    0.000 shape_base.py:785(tile)
+     1434    0.001    0.000    0.001    0.000 shape_base.py:856(<genexpr>)
+     2151    0.001    0.000    0.001    0.000 shape_base.py:866(<genexpr>)
+     1681    0.001    0.000    0.003    0.000 threading.py:1062(_wait_for_tstate_lock)
+     1681    0.003    0.000    0.006    0.000 threading.py:1104(is_alive)
+     1681    0.000    0.000    0.000    0.000 threading.py:506(is_set)
+      717    0.000    0.000    0.001    0.000 {built-in method builtins.all}
+     1439    0.025    0.000    0.025    0.000 {built-in method builtins.dir}
+        1    0.000    0.000  263.578  263.578 {built-in method builtins.exec}
+    25440    0.009    0.000    0.009    0.000 {built-in method builtins.hasattr}
+    52320    0.016    0.000    0.016    0.000 {built-in method builtins.isinstance}
+    25440    0.005    0.000    0.005    0.000 {built-in method builtins.issubclass}
+34078/34077    0.012    0.000    0.012    0.000 {built-in method builtins.len}
+      720    0.003    0.000    0.088    0.000 {built-in method builtins.print}
+    27593    1.241    0.000    1.241    0.000 {built-in method numpy.core.multiarray.array}
+      239    0.205    0.001    0.205    0.001 {built-in method numpy.core.multiarray.concatenate}
+      239    0.471    0.002    0.471    0.002 {built-in method numpy.core.multiarray.einsum}
+     1440    0.000    0.000    0.000    0.000 {built-in method posix.getpid}
+     1681    0.052    0.000    0.052    0.000 {built-in method posix.urandom}
+     1681    0.001    0.000    0.001    0.000 {method 'acquire' of '_thread.lock' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+      240    0.000    0.000    0.000    0.000 {method 'items' of 'dict' objects}
+    25920    0.191    0.000    0.191    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+      956    0.135    0.000    0.135    0.000 {method 'repeat' of 'numpy.ndarray' objects}
+     1673    0.002    0.000    0.002    0.000 {method 'reshape' of 'numpy.ndarray' objects}
+      239    0.000    0.000    0.000    0.000 {method 'transpose' of 'numpy.ndarray' objects}
+
+
+second time
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  259.300  259.300 <string>:2(<module>)
+      240    0.000    0.000    0.007    0.000 _methods.py:25(_amax)
+      240    0.000    0.000    0.011    0.000 _methods.py:28(_amin)
+    25440    0.078    0.000    0.084    0.000 _methods.py:43(_count_reduce_items)
+    25440    0.148    0.000    1.652    0.000 _methods.py:53(_mean)
+      240    0.001    0.000    0.008    0.000 fromnumeric.py:2200(amax)
+      240    0.001    0.000    0.012    0.000 fromnumeric.py:2300(amin)
+    25440    0.144    0.000    1.795    0.000 fromnumeric.py:2843(mean)
+     1681    0.019    0.000    0.084    0.000 iostream.py:180(schedule)
+     1440    0.001    0.000    0.002    0.000 iostream.py:284(_is_master_process)
+     1440    0.001    0.000    0.009    0.000 iostream.py:297(_schedule_flush)
+     1440    0.005    0.000    0.092    0.000 iostream.py:342(write)
+     1681    0.001    0.000    0.001    0.000 iostream.py:87(_event_pipe)
+    25440    0.011    0.000    1.235    0.000 numeric.py:484(asanyarray)
+      240    1.670    0.007  259.201    1.080 pilatus.py:248(tth_spectrum)
+    33120  255.680    0.008  255.680    0.008 pilatus.py:296(<listcomp>)
+        1    0.004    0.004  259.300  259.300 scan_images.py:162(integrate_peaks)
+        1    0.000    0.000    0.000    0.000 scan_images.py:186(__len__)
+     1681    0.001    0.000    0.003    0.000 threading.py:1062(_wait_for_tstate_lock)
+     1681    0.003    0.000    0.006    0.000 threading.py:1104(is_alive)
+     1681    0.000    0.000    0.000    0.000 threading.py:506(is_set)
+      961    0.020    0.000    0.020    0.000 {built-in method builtins.dir}
+        1    0.000    0.000  259.301  259.301 {built-in method builtins.exec}
+    25440    0.008    0.000    0.008    0.000 {built-in method builtins.hasattr}
+    52320    0.015    0.000    0.015    0.000 {built-in method builtins.isinstance}
+    25440    0.005    0.000    0.005    0.000 {built-in method builtins.issubclass}
+33122/33121    0.011    0.000    0.011    0.000 {built-in method builtins.len}
+      720    0.003    0.000    0.095    0.000 {built-in method builtins.print}
+    25920    1.229    0.000    1.229    0.000 {built-in method numpy.core.multiarray.array}
+     1440    0.000    0.000    0.000    0.000 {built-in method posix.getpid}
+     1681    0.058    0.000    0.058    0.000 {built-in method posix.urandom}
+     1681    0.002    0.000    0.002    0.000 {method 'acquire' of '_thread.lock' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+      240    0.000    0.000    0.000    0.000 {method 'items' of 'dict' objects}
+    25920    0.181    0.000    0.181    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+
+
+
+Basically all of the time is spent in the following 2-D list comprehension:
+	pixel_counts = [self.im[i,j] for i in xrange for j in yrange if inbin[i,j]]
+
+
+I replaced it with
+	if slits:
+		inbin = np.logical_and(inbin, self.inslits)
+	pixel_counts = self.im[inbin][:]
+... and a bit more coding in self.apply_slits()
+
+And the new timing result:
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    4.538    4.538 <string>:2(<module>)
+      240    0.000    0.000    0.007    0.000 _methods.py:25(_amax)
+      240    0.000    0.000    0.011    0.000 _methods.py:28(_amin)
+    25440    0.058    0.000    0.062    0.000 _methods.py:43(_count_reduce_items)
+    25440    0.104    0.000    0.308    0.000 _methods.py:53(_mean)
+      240    0.001    0.000    0.008    0.000 fromnumeric.py:2200(amax)
+      240    0.002    0.000    0.013    0.000 fromnumeric.py:2300(amin)
+    25440    0.048    0.000    0.356    0.000 fromnumeric.py:2843(mean)
+      239    0.000    0.000    0.000    0.000 fromnumeric.py:506(transpose)
+     1462    0.014    0.000    0.052    0.000 iostream.py:180(schedule)
+     1440    0.001    0.000    0.001    0.000 iostream.py:284(_is_master_process)
+     1440    0.000    0.000    0.001    0.000 iostream.py:297(_schedule_flush)
+     1440    0.004    0.000    0.059    0.000 iostream.py:342(write)
+     1462    0.001    0.000    0.001    0.000 iostream.py:87(_event_pipe)
+    26157    0.008    0.000    0.017    0.000 numeric.py:484(asanyarray)
+      239    0.060    0.000    0.344    0.001 pilatus.py:140(get_map_xyz)
+      239    0.008    0.000    0.838    0.004 pilatus.py:172(get_map_xyz_prime)
+      239    0.818    0.003    1.660    0.007 pilatus.py:241(get_map_tth)
+      240    2.307    0.010    4.471    0.019 pilatus.py:256(tth_spectrum)
+      240    0.012    0.000    0.101    0.000 pilatus.py:82(apply_slits)
+        1    0.003    0.003    4.538    4.538 scan_images.py:162(integrate_peaks)
+        1    0.000    0.000    0.000    0.000 scan_images.py:186(__len__)
+      239    0.004    0.000    0.177    0.001 shape_base.py:282(stack)
+      239    0.001    0.000    0.001    0.000 shape_base.py:333(<listcomp>)
+      956    0.001    0.000    0.001    0.000 shape_base.py:337(<genexpr>)
+      239    0.001    0.000    0.001    0.000 shape_base.py:349(<listcomp>)
+      957    0.009    0.000    0.191    0.000 shape_base.py:785(tile)
+     1914    0.001    0.000    0.001    0.000 shape_base.py:856(<genexpr>)
+     2871    0.001    0.000    0.001    0.000 shape_base.py:866(<genexpr>)
+     1462    0.001    0.000    0.002    0.000 threading.py:1062(_wait_for_tstate_lock)
+     1462    0.002    0.000    0.005    0.000 threading.py:1104(is_alive)
+     1462    0.000    0.000    0.000    0.000 threading.py:506(is_set)
+      957    0.000    0.000    0.001    0.000 {built-in method builtins.all}
+     1439    0.030    0.000    0.030    0.000 {built-in method builtins.dir}
+        1    0.000    0.000    4.538    4.538 {built-in method builtins.exec}
+    25440    0.006    0.000    0.006    0.000 {built-in method builtins.hasattr}
+    52320    0.011    0.000    0.011    0.000 {built-in method builtins.isinstance}
+    25440    0.004    0.000    0.004    0.000 {built-in method builtins.issubclass}
+34318/34317    0.007    0.000    0.007    0.000 {built-in method builtins.len}
+      720    0.004    0.000    0.063    0.000 {built-in method builtins.print}
+    27833    0.019    0.000    0.019    0.000 {built-in method numpy.core.multiarray.array}
+      239    0.171    0.001    0.171    0.001 {built-in method numpy.core.multiarray.concatenate}
+      239    0.476    0.002    0.476    0.002 {built-in method numpy.core.multiarray.einsum}
+     1440    0.000    0.000    0.000    0.000 {built-in method posix.getpid}
+     1462    0.032    0.000    0.032    0.000 {built-in method posix.urandom}
+     1462    0.001    0.000    0.001    0.000 {method 'acquire' of '_thread.lock' objects}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+      240    0.000    0.000    0.000    0.000 {method 'items' of 'dict' objects}
+    25920    0.126    0.000    0.126    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+     1436    0.176    0.000    0.176    0.000 {method 'repeat' of 'numpy.ndarray' objects}
+     2393    0.002    0.000    0.002    0.000 {method 'reshape' of 'numpy.ndarray' objects}
+      239    0.000    0.000    0.000    0.000 {method 'transpose' of 'numpy.ndarray' objects}
+
+
+Absolutely awesome!
+I destroyed Stanford!!!
+
+
+
+
+import os, time
+import numpy as np
+from matplotlib import pyplot as plt
+from EC_Xray import ScanImages#, Pilatus
+import cProfile
+
+plt.close('all')
+
+importrawdata = True
+if importrawdata:
+    data_directory = '/media/scott/中关村 Storage/Erlend'
+    scan = ScanImages(directory=data_directory + os.sep + 'Cu5_Ar_0p20V', 
+                      tag='17K05_11h15_scan1',
+                      macro=data_directory + os.sep + 'smacros' + os.sep + 'Cu5_Ar_0p20V_timescan_0p15_17K05_11h02.txt',
+                      scan_type='time')
+
+updateScanImages = False
+if updateScanImages:
+    scan1 = ScanImages(directory=data_directory + os.sep + 'Cu5_Ar_0p20V', 
+                      tag='17K05_11h15_scan1',
+                      macro=data_directory + os.sep + 'smacros' + os.sep + 'Cu5_Ar_0p20V_timescan_0p15_17K05_11h02.txt',
+                      scan_type='time')
+    scan1.images = scan.images
+
+#print(scan[0].get_map_xyz())
+
+#scan[20].show_image()
+
+ax1 = scan[20].plot_spectrum(method='sum')
+ax2 = scan[20].plot_spectrum(method='average')
+
+ax1.set_xlim(ax2.get_xlim())
+ax1.set_ylim(5000, 9000)
+
+def tic():
+    t0 = time.time()
+    def toc():
+        t = time.time()
+        return t - t0
+    return toc
+
+toc = tic()
+cProfile.run('''
+scan.integrate_peaks(peaks={'Cu_111':([20.65, 21.65], 'brown'),
+                            'CuO_111':([17.55, 18.55], 'k')},
+                     spectrum_specs={}, override=False,
+                     background='linear', background_points=4,)
+''')
+print('time to integrate peaks = ' + str(toc()) + ' s')
+
