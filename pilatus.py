@@ -6,7 +6,7 @@ Created on Thu Dec  7 04:37:00 2017
 @author: scott
 """
 
-import os, re
+import os
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -19,12 +19,13 @@ calibration_0 = {'direct_beam_x': 	 277,
 
 shape_0 = (195, 487)
 
-def read_RAW(file, shape=shape_0):
+def read_RAW(file, shape=shape_0, verbose=True):
 
     '''
     Copied from Pilatus_Calibrate.py, by Kevin Stone, SSRL
     '''
-    print("Reading RAW file here...")
+    if verbose:
+        print("Reading RAW file here...")
 
     if True:
     #try:    # I want to see what error it gives when there's an error.
@@ -52,14 +53,14 @@ def read_calibration(file):
 class Pilatus:
     def __init__(self, file, shape=shape_0, 
                  calibration=calibration_0, alpha=None, tth=None,
-                 xslits=None,  yslits=[60, 430]):
-        
-        print('loading Pilatus object for ' + file)
+                 xslits=None,  yslits=[60, 430], verbose=True):
+        if verbose:
+            print('loading Pilatus object for ' + file)
         directory, name = os.path.split(file)
         self.shape = shape
         self.directory = directory
         self.name = name
-        self.im = read_RAW(file, shape=shape)
+        self.im = read_RAW(file, shape=shape, verbose=verbose)
         if type(calibration) is str: #then it's a file
             calibration = read_calibration(calibration)
         self.calibration = calibration

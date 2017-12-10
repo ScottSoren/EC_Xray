@@ -5,77 +5,42 @@ Created on Sat Dec  9 00:54:57 2017
 
 @author: scott
 """
-import os, re
+import os
 import numpy as np
-import matplotlib as mpl
+#import matplotlib as mpl
 import scipy
 from matplotlib import pyplot as plt
 from moviepy.editor import VideoClip
 from moviepy.video.io.bindings import mplfig_to_npimage
 
-from .plot_spectra import load_from_csv
+from .import_data import load_from_csv, read_macro
 from .pilatus import Pilatus, calibration_0, shape_0
 from .XRD import integrate_peak
 
-float_match = r'[-]?\d+[\.]?\d*(e[-]?\d+)?'     #matches floats like -3.54e4 or 7 or 245.13 or 1e-15
-#note, no white space included on the ends! Seems to work fine.
 
-def read_macro(file):
-    with open(file) as macro:
-        lines = macro.readlines()
-    lines = remove_comments(lines)
-    settings = {'tth':[], 'alpha':[], 'savepath':[], 'newfile':[], 'measurements':[]}
-    for line in lines:
-        #print(line)
-        tth_match = re.search('umv tth ' + float_match, line)
-        if tth_match:
-            #print('got tth!')
-            settings['tth'] += [float(tth_match.group()[7:])]
-            continue
-        alpha_match = re.search('umv th ' + float_match, line)
-        if alpha_match:
-            settings['alpha'] += [float(alpha_match.group()[6:])]
-            continue
-        if 'pd savepath' in line:
-            settings['savepath'] += [line[12:]]
-            continue
-        if 'newfile ' in line:
-            settings['newfile'] += [line[8:]]
-            continue
-        if '_timescan ' in line or 'ascan ' in line or 'pdascan ' in line:
-            settings['measurements'] += [line]
-            continue
-    return settings
-
-def remove_comments(lines):
-    new_lines = []
-    for line in lines:
-        if '#' in line:
-            line = re.search('^.*\#', line).group()[:-1]
-            if re.search(r'\w', line): #to drop lines that only have comments
-                new_lines += [line]
-        else:
-            new_lines += [line] #I don't want to get rid of empty lines here
-    return new_lines
-
-def get_images(directory, tag, shape=shape_0, calibration=calibration_0):
-    print('\n\nfunction \'get_images\' at your service!\n')
+def get_images(directory, tag, shape=shape_0, calibration=calibration_0, verbose=True):
+    if verbose:
+        print('\n\nfunction \'get_images\' at your service!\n')
     lslist = os.listdir(directory)
-    print(str(len(lslist)) + ' items in ' + directory)
+    if verbose:
+        print(str(len(lslist)) + ' items in ' + directory)
     imagenames = [f for f in lslist if f[-4:]=='.raw' and tag in f]
-    print(' of which ' + str(len(imagenames)) + ' are image files including \'' + tag + '\'')
+    if verbose:
+        print(' of which ' + str(len(imagenames)) + ' are image files including \'' + tag + '\'')
     images = {}  
     for f in imagenames:
         n = int(f[-8:-4])  #this is the image number as SPEC saves them
         filepath = directory + os.sep + f
-        images[n] = Pilatus(filepath, shape=shape, calibration=calibration_0)
-    print('\nfunction \'get_images\' finished!\n\n')
+        images[n] = Pilatus(filepath, shape=shape, calibration=calibration_0, verbose=verbose)
+    if verbose:
+        print('\nfunction \'get_images\' finished!\n\n')
     return images
 
 def peak_colors(peak_list, colors=['k', 'b', 'r', 'g', 'c', 'm']):
     '''
     This is a fill-in function until I've got some kind of standard colors
     implemented. It takes a list of integral ranges and returns an identically
+    indexed dictionary with each value of the form (integral_range, color)
     '''
     integrals = {}
     for i, integral in enumerate(peak_list):
@@ -87,10 +52,14 @@ def peak_colors(peak_list, colors=['k', 'b', 'r', 'g', 'c', 'm']):
 class ScanImages:
     def __init__(self, csvfile=None, directory=None, pilatusfilebase='default', 
                  tag=None, scan_type='time', calibration=calibration_0, 
-                 macro=None, tth=None, alpha=None):
+                 macro=None, tth=None, alpha=None, timestamp=None, verbose=True):
         '''
         give EITHER a csvfile name with full path, or a directory and a tag.
-        pilatusfilebase can be read from 
+        pilatusfilebase can be constructed from this, and used to import the
+        Pilatus image objects.
+        The calibration is passed on to the Pilatus objects.
+        The macro is read to get the (tth, alpha) values which aren't scanned,
+        though they can also be put in manually.
         '''
         if csvfile is None:
             if tag is None or directory is None:
@@ -108,7 +77,8 @@ class ScanImages:
             directory, csvname = os.path.split(csvfile)
         
         csvfilepath = directory + os.sep + csvname
-        self.csv_data = load_from_csv(csvfilepath) 
+        self.csv_data = load_from_csv(csvfilepath, timestamp=timestamp) 
+        self.timestamp = timestamp
         
         name = csvname[:-4] # to drop the .csv
         print('Loading Scan: directory = ' + directory + ',\n\tname = ' + name)
@@ -120,7 +90,7 @@ class ScanImages:
         else:
             pilatus_directory, tag_pilatus = os.path.split(pilatusfilebase)
         self.images = get_images(pilatus_directory, tag=tag_pilatus, 
-                                 calibration=calibration_0)
+                                 calibration=calibration_0, verbose=verbose)
         
         if scan_type in ['time', 't']:
             self.scan_type = 't'
@@ -139,13 +109,15 @@ class ScanImages:
         self.tth = tth
         self.alpha = alpha
         
-        self.data = {}    # this will conveniently store useful data, some from csv_data
+        self.data = self.csv_data.copy()
+        # this will conveniently store useful data, some from csv_data
         self.csv_into_images()
          
     def csv_into_images(self):
         if self.scan_type == 't':
+            self.data['t'] = self.csv_data['TwoTheta']
+            self.data['data_cols'] += ['t']
             for i in range(len(self)):
-                self.data['t'] = self.csv_data['TwoTheta']
                 self.images[i].t = self.data['t'][i]
                 # I don't like it, but that's where SPEC saves t.
                 # data columns 'TTIMER' and 'Seconds' contain nothing.
@@ -155,8 +127,9 @@ class ScanImages:
                 self.images[i].tth = self.tth
                 self.images[i].alpha = self.alpha
         elif self.scan_type == 'tth':
+            self.data['tth_scan'] = self.csv_data['TwoTheta']
+            self.data['data_cols'] += ['tth_scan']
             for i in range(len(self)):
-                self.data['tth_scan'] = self.csv_data['TwoTheta']
                 #self.data['tth'] will be saved for when calculating the spectrum from the images
                 self.images[i].tth = self.data['tth_scan'][i]
                 self.images[i].alpha = self.alpha
@@ -193,7 +166,15 @@ class ScanImages:
                     integrals[name] = []
                 integrals[name] += [I]      
             print('... and integrated peaks!')
-        self.integrals.update(integrals)
+            
+        for key, value in integrals.items():  #numerize and save
+            value = np.array(value)
+            integrals[key] = value
+            self.integrals[key] = value
+            self.data[key] = value
+            if key not in self.data['data_cols']:
+                self.data['data_col'] += [key]
+            
         return(integrals)                     
     
     def __len__(self):
@@ -281,6 +262,8 @@ class ScanImages:
         self.bins = bins
         self.spectrum = spectrum
         self.data.update({'tth':tth_vec, 'counts':counts_vec})
+        if 'counts' not in self.data['data_cols']:
+            self.data['data_cols'] += ['counts']
         
         if out == 'spectrum':
             return spectrum
@@ -314,7 +297,8 @@ class ScanImages:
                           slits=True, xslits=None, yslits=None, tth=None,
                           method='average', min_pixels=10, N_x=300, 
                           ax='new', orientation='xy',
-                          aspect='auto', colormap='inferno'):
+                          aspect='auto', colormap='inferno', 
+                          tspan='all'):
         #get the raw spectra
         spectra_raw = self.get_stacked_spectra(stepsize=stepsize, tth=tth,
                                                method=method, override=override,
@@ -330,7 +314,10 @@ class ScanImages:
             
         # we want the scan axis to vary linearly, but the input might not.
         f = scipy.interpolate.interp1d(x_i, spectra_raw, axis=0) 
-        x = np.linspace(x_i[0], x_i[-1], num=N_x)
+        if tspan == 'all':
+            x = np.linspace(x_i[0], x_i[-1], num=N_x)
+        else:
+            x = np.linspace(tspan[0], tspan[-1], num=N_x)
         spectra = f(x)
  
         # and of course the other dimension, which is tth:

@@ -11,6 +11,7 @@ import re
 import numpy as np
 from matplotlib import pyplot as plt
 
+from .importing_data import load_from_csv
 
 def plot_spectrum(data, ax='new', tth_str='TwoTheta', pd_str='pd6', color='k', 
                   normalize=False, tth_normalize='max',
@@ -113,66 +114,7 @@ def get_alpha_scan_files(path):
             files[angle] += [f]
     return files
 
-def get_empty_set(cols, title=''):
-        #get the colheaders and make space for data   
-    data = {}
-    data[title] = title
-    for col in cols:
-        data[col] = []
-    data['data cols'] = cols
-    return data
 
 
-def numerize(data):
-    for col in data['data cols']: #numerize!
-        data[col] = np.array(data[col])    
-
-
-def load_from_csv(filepath, multiset=False):
-    
-    f = open(filepath,'r') # read the file!
-    lines = f.readlines()
-    colheaders = [col.strip() for col in lines[0].split(',')]
-    data = get_empty_set(colheaders, title=filepath)
-    datasets = []
-    
-    for line in lines[1:]: #put data in lists!
-        vals = [val.strip() for val in line.split(',')]
-        not_data = []
-        newline = {}
-        for col, val in zip(colheaders, vals):
-            if col in data['data cols']:
-                try:
-                    val = float(val)
-                except ValueError:
-                    print('value ' + val + ' of col ' + col + ' is not data.')
-                    not_data += [col]   
-            newline[col] = val
-        if len(not_data) == len(data['data cols']):
-            print('it looks like there is another data set appended!')
-            if multiset:
-                print('continuing to next set.')
-                numerize(data)
-                datasets += [data.copy()]
-                colheaders = [val.strip() for val in vals]
-                data = get_empty_set(colheaders)
-                continue
-            else:
-                print('returning first set.')
-                numerize(data)
-                return data
-        else:    
-            for col in not_data:
-                data['data cols'].remove(col)
-                print('column ' + col + ' removed from \'data cols \'.')
-
-        for col, val in zip(colheaders, vals):
-            data[col] += [newline[col]]
-    
-    numerize(data)
-    datasets += [data]
-    if multiset:
-        return datasets
-    return data
 
     
