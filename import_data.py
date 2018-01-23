@@ -6,11 +6,16 @@ Created on Sun Dec 10 03:17:41 2017
 @author: scott
 """
 import os, platform, re, codecs
-from datetime import datetime
+import time, datetime
 import numpy as np
 
-float_match = r'[-]?\d+[\.]?\d*(e[-]?\d+)?'     #matches floats like -3.54e4 or 7 or 245.13 or 1e-15
+float_match = '[-]?\d+[\.]?\d*(e[-]?\d+)?'     #matches floats like '-3.54e4' or '7' or '245.13' or '1e-15'
 #note, no white space included on the ends! Seems to work fine.
+timestamp_match = '([0-9]{2}:){2}[0-9]{2}'     #matches timestamps like '14:23:01'
+date_match = '([0-9]{2}[/-]){2}[0-9]{4}'          #matches dates like '01/15/2018' or '09-07-2016'
+# older EC-Lab seems to have dashes in date, and newer has slashes. 
+# Both seem to save month before day, regardless of where the data was taken or .mpt exported.
+
 
 def numerize(data):
     for col in data['data_cols']: #numerize!
@@ -25,6 +30,67 @@ def get_empty_set(cols, **kwargs):
     data['data_cols'] = cols
     return data
 
+def timestamp_to_unix_time(timestamp, date='today'):
+    '''
+    Possibly overly idiot-proof way to convert a number of timestamps read
+    from my data into unix times.
+    '''
+    if timestamp == 'now':
+        return time.time()
+    elif type(timestamp) is time.struct_time:
+        print('\'timestamp_to_unix_time\' revieved a time.struct_time object. ' +
+              'Returning the corresponding epoch time.')
+    elif type(timestamp) is not str:
+        print('timestamp_to_unix_time\' didn\'t receive a string. Returning' + 
+              ' the argument.')
+        return timestamp
+    if len(timestamp) > 8 and date=='today':
+        print('\'timestamp_to_unix_time\' is assuming' + 
+              ' the date and timestamp are input in the same string.')
+        try:
+            unix_time = time.mktime(time.strptime(timestamp))
+            print('timestamp went straight into time.strptime()! Returning based on that.')
+            return unix_time
+        except ValueError:
+            print('bit \'' + timestamp + '\' is not formatted like ' + 
+                  'time.strptime() likes it. Checking another format')
+            try:
+                date = re.search(date_match, timestamp).group()
+                print('Matched the date with \'' + date_match + '\'.')
+            except AttributeError:
+                print('Couldn\'t match with \'' + date_match +
+                      '\'. Assuming you want today.')
+            try:
+                timestamp = re.search(timestamp_match, timestamp).group()
+                print('Matched the time with \'' + timestamp_match + '\'.' )
+            except AttributeError:
+                print('I got no clue what you\'re talking about, dude, ' +
+                      'when you say ' + timestamp + '. It didn\'t match \.' +
+                      timestamp_match + '\'. Assuming you want 00:00:00')
+                timestamp = '00:00:00'            
+    #h, m, s = (int(n) for n in timestamp.split(':'))
+    #D, M, Y = (int(n) for n in re.split('[-/]', date))
+    if date == 'today':
+        struct = time.localtime()
+        date = str(struct.tm_mon) + '/' + str(struct.tm_mday) + '/' + str(struct.tm_year)
+    struct = time.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
+    unix_time = time.mktime(struct)
+    return unix_time
+    
+def unix_time_to_timestamp(tstamp):
+    struct = time.localtime(tstamp)
+    hh = str(struct.tm_hour)
+    if len(hh) == 1:
+        hh = '0' + hh
+    mm = str(struct.tm_min)
+    if len(hh) == 1:
+        mm = '0' + mm
+    ss = str(struct.tm_sec)
+    if len(hh) == 1:
+        ss = '0' + ss   
+    timestamp = hh + ':' + mm + ':' + ss
+    return timestamp
+        
 def timetag_to_timestamp(filename):
     '''
     Converts a time tag of format _<hh>h<mm>m<ss>_ to timestamp of format 
@@ -50,13 +116,15 @@ def timetag_to_timestamp(filename):
 def get_creation_timestamp(filepath):
     '''
     Returns creation timestamp of a file in the format that 
-    combining.syncrhonize reads
+    combining.syncrhonize reads.
+    The timestamp is local time, not absolute time.
+    We need to move to epoch time everywhere!!!
     '''
     t = get_creation_time(filepath)
-    time = datetime.fromtimestamp(t)
-    hh = str(time.year)
-    mm = str(time.minute)
-    ss = str(time.second)
+    struct = time.localtime(t)
+    hh = str(struct.tm_hour)
+    mm = str(struct.tm_minute)
+    ss = str(struct.tm_second)
     return hh + ':' + mm + ':' + ss
     
 
@@ -77,8 +145,20 @@ def get_creation_time(filepath):
             # so we'll settle for when its content was last modified.
             return stat.st_mtime    
 
+def timestamp_from_file(filepath, verbose=True):
+    a = re.search('[0-9]{2}h[0-9]{2}', filepath)
+    if a is None:
+        if verbose:
+            print('trying to read creation time')
+        timestamp = get_creation_timestamp(filepath)
+    else:
+        if verbose:
+            print('getting timestamp from filename ' + filepath)
+        timestamp = timetag_to_timestamp(filepath)
+    return timestamp
 
-def load_from_csv(filepath, multiset=False, timestamp=None):
+
+def load_from_csv(filepath, multiset=False, timestamp=None, verbose=True):
     '''
     This function is made a bit more complicated by the fact that some csvs
     seem to have multiple datasets appended, with a new col_header line as the
@@ -87,6 +167,8 @@ def load_from_csv(filepath, multiset=False, timestamp=None):
     if timestamp = None, the timestamp will be the date created
     I hate that SPEC doesn't save absolute time in a useful way.
     '''
+    if verbose:
+        print('function \'load_from_csv\' at your service!')
     if timestamp is None:
         a = re.search('[0-9]{2}h[0-9]{2}', filepath)
         if a is None:
@@ -139,6 +221,8 @@ def load_from_csv(filepath, multiset=False, timestamp=None):
     
     numerize(data)
     datasets += [data]
+    if verbose:
+        print('function \'load_from_csv\' finished!')
     if multiset:
         return datasets
     return data
@@ -250,17 +334,24 @@ def import_text(full_path_name='current', verbose=True):
     
     if verbose:
         print('\nfunction \'import_text\' finished!\n\n')    
-    return file_lines    
-    
-    
-def text_to_data(file_lines, title='get_from_file',
-                 data_type='EC', N_blank=10, verbose=True,
-                 header_string=None, timestamp=None, ):
+    return file_lines        
+
+
+def text_to_data(file_lines, title='get_from_file', 
+                 timestamp=None, date='today', tstamp=None,
+                 data_type='EC', N_blank=10, verbose=True, sep=None,
+                 header_string=None):
     '''
-    This method will organize data in the lines of text from an EC or MS file 
-    into a dictionary as follows (plus a few more keys)
-    {'title':title, 'header':header, 'colheader1':[data1], 'colheader2':[data2]...}
-    '''    
+    This method will organize data in the lines of text from a file useful for
+    electropy into a dictionary as follows (plus a few more keys)
+    {'title':title, 'header':header, 'timestamp':timestamp,
+     'data_cols':[colheader1, colheader2, ...],
+     colheader1:[data1], colheader2:[data2]...}
+     So far made to work with SPEC files (.csv), XAS files (.dat), 
+     EC_Lab files (.mpt).
+     If you need to import cinfdata files (.txt), you are in the wrong place.
+     This is EC_Xray's import_data, not EC_MS!!!
+    '''      
     if verbose:
         print('\n\nfunction \'text_to_data\' at your service!\n')
     
@@ -273,9 +364,20 @@ def text_to_data(file_lines, title='get_from_file',
     commacols = []                   #will catch if data is recorded with commas as decimals.
     
     loop = False
+
+    if data_type == 'SPEC':
+        N_head = 1 #the column headers are the first line
+        if sep is None:
+            sep = ','
+    elif data_type == 'XAS':
+        datacollines = False # column headers are on multiple lines, this will be True for those lines
+        col_headers = []   #this is the most natural place to initiate the vector
     
+    if sep is None:  #EC, XAS, and MS data all work with '\t'
+        sep = '\t'
+
     for nl, line in enumerate(file_lines):
-        
+        l = line.strip()        
         if nl < N_head - 1:            #we're in the header
         
             if data_type == 'EC':
@@ -288,11 +390,13 @@ def text_to_data(file_lines, title='get_from_file',
                 if re.search(r'[Number ]*header lines',line):
                     N_head_object = re.search(r'[0-9][0-9]*',line)
                     N_head = int(N_head_object.group())
-                    if verbose:
+                    if verbose:     
                         print('N_head \'' + str(N_head) + '\' found in line ' + str(nl))
-                elif re.search('Acquisition started',line):
-                    timestamp_object = re.search(r'[\S]*\Z',line.strip())
+                elif timestamp is None and re.search('Acquisition started',line):
+                    timestamp_object = re.search(timestamp_match,l)
                     timestamp = timestamp_object.group()
+                    date_object = re.search(date_match, l)
+                    date = date_object.group()
                     if verbose:
                         print('timestamp \'' + timestamp + '\' found in line ' + str(nl))        
                 elif re.search('Number of loops', line): #Then I want to add a loop number variable to data_cols
@@ -306,29 +410,54 @@ def text_to_data(file_lines, title='get_from_file',
                     dataset['loop number'] += N * [n]
                     
                 header_string = header_string + line
-                
+
+
+            elif data_type == 'XAS':
+                if datacollines:
+                    if l == '': #then we're done geting the column headers
+                        datacollines = False
+                        #header = False  #and ready for data.
+                        N_head = nl + 1 # so that the next line is data!
+                        dataset['data_cols'] = col_headers.copy()
+                        if verbose:
+                            print('data col lines finish on line' + str(nl) + 
+                                  '. the next line should be data')
+                    else:
+                        col_headers += [l]    
+                        dataset[l] = []
+                elif l == 'Data:':  #then we're ready to get the column headers
+                    datacollines = True
+                    if verbose:
+                        print('data col lines start on line ' + str(nl+1))
+                a = re.search(timestamp_match, line)
+                if timestamp is None and a is not None:
+                    timestamp = a.group()
+                    tstamp = timestamp_to_unix_time(l) #the XAS data is saved with time.ctime()
+                    if verbose:
+                        print('timestamp \'' + timestamp + '\' found in line ' + str(nl)) 
+                header_string = header_string + line                
             
         elif nl == N_head - 1:      #then it is the column-header line
                #(EC-lab includes the column-header line in header lines)
             #col_header_line = line
-            col_headers = line.strip().split('\t')
+            col_headers = [col.strip() for col in l.split(sep=sep)]
             dataset['N_col']=len(col_headers) 
             dataset['data_cols'] = col_headers.copy()  #will store names of columns containing data
             #DataDict['data_cols'] = col_headers.copy()
             for col in col_headers:
                 dataset[col] = []              #data will go here    
-            header_string = header_string+line #include this line in the header
+            header_string = header_string + line #include this line in the header
             if verbose:
                 print('Data starting on line ' + str(N_head) + '\n')
             
 
         else:                   # data, baby!
-            line_data = line.strip().split('\t')
+            line_data = [dat.strip() for dat in l.split(sep=sep)]
             if not len(line_data) == len(col_headers):
                 if verbose:
                     print(list(zip(col_headers,line_data)))
                     print('Mismatch between col_headers and data on line ' + str(nl) + ' of ' + title)
-                if nl == N_lines - 1:
+                if nl == N_lines - 1 and data_type=='MS':    # this is usually not useful!
                     print('mismatch due to an incomplete last line of ' + title + '. I will discard the last line.')
                     break
             for col, data in zip(col_headers, line_data):
@@ -363,6 +492,11 @@ def text_to_data(file_lines, title='get_from_file',
     dataset['title'] = title
     dataset['header'] = header_string
     dataset['timestamp'] = timestamp
+    dataset['date'] = date
+    if tstamp is None:
+        tstamp = timestamp_to_unix_time(timestamp, date)
+    dataset['tstamp'] = tstamp 
+    #UNIX epoch time, for proper synchronization!
     dataset['data_type'] = data_type
     
     if data_type == 'EC':           #so that synchronize can combine current data from different EC-lab techniques
@@ -373,3 +507,54 @@ def text_to_data(file_lines, title='get_from_file',
     if verbose:
         print('\nfunction \'text_to_data\' finished!\n\n')    
     return dataset
+
+
+
+def load_from_file(full_path_name='current', title='file', timestamp=None,
+                 data_type='EC', N_blank=10, verbose=True):
+    '''
+    This method will organize the data in a file useful for
+    electropy into a dictionary as follows (plus a few more keys)
+    {'title':title, 'header':header, 'timestamp':timestamp,
+     'data_cols':[colheader1, colheader2, ...],
+     colheader1:[data1], colheader2:[data2]...}
+     So far made to work with SPEC files (.csv), XAS files (.dat), 
+     EC_Lab files (.mpt).
+     If you need to import cinfdata files (.txt), you are in the wrong place.
+     Use EC_MS's import_data instead!!!
+    '''
+    if verbose:
+        print('function \'load_from_file\' at your service!')
+    if title == 'file':
+        folder, title = os.path.split(full_path_name)
+    file_lines = import_text(full_path_name, verbose)
+    dataset = text_to_data(file_lines=file_lines, title=title, data_type=data_type, 
+                           timestamp=timestamp, N_blank=N_blank, verbose=verbose)
+    if dataset['timestamp'] is None:
+        dataset['timestamp'] = timestamp_from_file(full_path_name, verbose=verbose)
+    numerize(dataset)
+    if verbose:
+        print('function \'load_from_file\' finished!')
+    return dataset 
+    
+    
+def load_EC_set(directory, EC_file=None, tag='01', 
+                  verbose=True): 
+    if verbose:
+        print('\n\nfunction load_EC_set at your service!\n')
+    from .combining import synchronize, sort_time
+    
+    lslist = os.listdir(directory)
+    
+    if EC_file is None:
+        EC_file = [f for f in lslist if f[:2] == tag and f[-4:] == '.mpt']
+    elif type(EC_file) is str:
+        EC_file = [EC_file]
+    EC_datas = [load_from_file(directory + os.sep + f, data_type='EC', verbose=verbose) for f in EC_file]
+    EC_data = synchronize(EC_datas, verbose=verbose)
+    if 'loop number' in EC_data['data_cols']:
+        sort_time(EC_data, verbose=verbose) #note, sort_time no longer returns!
+        
+    if verbose:
+         print('\nfunction load_EC_set finished!\n\n')       
+    return EC_data

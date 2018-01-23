@@ -19,7 +19,7 @@ calibration_0 = {'direct_beam_x': 	 277,
 
 shape_0 = (195, 487)
 
-def read_RAW(file, shape=shape_0, verbose=True):
+def read_RAW(file, shape=shape_0, verbose=True, pixelmax=None):
 
     '''
     Copied from Pilatus_Calibrate.py, by Kevin Stone, SSRL
@@ -31,6 +31,16 @@ def read_RAW(file, shape=shape_0, verbose=True):
     #try:    # I want to see what error it gives when there's an error.
         with open(file, 'rb') as im:
             arr = np.fromstring(im.read(), dtype='int32')
+        if pixelmax is not None:
+            arr[arr>pixelmax] = pixelmax
+        if shape == 'square':
+            n = 4719616
+            guess = int(np.sqrt(n))
+            for i in range(n):
+                j = n/(guess-i)
+                if j == int(j):
+                    break
+            shape = (int(j), int(n/j))
         arr.shape = shape
         arr = np.fliplr(arr)  #for the way mounted at BL2-1
         return arr
@@ -52,41 +62,54 @@ def read_calibration(file):
 
 class Pilatus:
     def __init__(self, file, shape=shape_0, 
-                 calibration=calibration_0, alpha=None, tth=None,
-                 xslits=None,  yslits=[60, 430], verbose=True):
+                 calibration=None, alpha=None, tth=None,
+                 xslits=None,  slits=False, yslits=[60, 430], pixelmax=None, verbose=True):
         if verbose:
             print('loading Pilatus object for ' + file)
         directory, name = os.path.split(file)
         self.shape = shape
         self.directory = directory
         self.name = name
-        self.im = read_RAW(file, shape=shape, verbose=verbose)
+        self.im = read_RAW(file, shape=shape, pixelmax=pixelmax, verbose=verbose)
         if type(calibration) is str: #then it's a file
             calibration = read_calibration(calibration)
         self.calibration = calibration
-        self.db_pixel = (calibration['direct_beam_y'],  #First dimension is in 
-                         calibration['direct_beam_x'])  #Second dimension is in tth direction
-                         #shape[1] -calibration['direct_beam_x']) 
-                         #subtracted from shape[1] corresponding to the fliplr in read_RAW above
-                         #The Cu(111) peak ligns up without this.
+        
+        if self.calibration is not None:
+            self.db_pixel = (calibration['direct_beam_y'],  #First dimension is in 
+                             calibration['direct_beam_x'])  #Second dimension is in tth direction
+                             #shape[1] -calibration['direct_beam_x']) 
+                             #subtracted from shape[1] corresponding to the fliplr in read_RAW above
+                             #The Cu(111) peak ligns up without this.
                          
-                         
-                         
-                         #db_pixel needs to be a tuple to be read as a 2-d index to e.g. im
-        #strangely, shape[1] is for dimension x. I still don't get numpy...
-        self.R = calibration['Sample_Detector_distance_mm'] * 1e-3 
-        # distance from sample to detector / m
-        self.R_pixels = calibration['Sample_Detector_distance_pixels']
-        self.dx = self.R/self.R_pixels #distance between pixels / m
-        self.dy = self.R/self.R_pixels #disttance between pixels / m
+                
+                             
+                             #db_pixel needs to be a tuple to be read as a 2-d index to e.g. im
+            #strangely, shape[1] is for dimension x. I still don't get numpy...
+            self.R = calibration['Sample_Detector_distance_mm'] * 1e-3 
+            # distance from sample to detector / m
+            self.R_pixels = calibration['Sample_Detector_distance_pixels']
+            self.dx = self.R/self.R_pixels #distance between pixels / m
+            self.dy = self.R/self.R_pixels #disttance between pixels / m
+        else:
+            self.dx = 1e-3
+            self.dy = 1e-3
+        self.db_pixel = (0,0)
+        
+        self.slits = slits 
         self.alpha = alpha  # sample angle wrt direct beam / deg
         self.tth = tth      # detector angle wrt direct beam / deg
         self.xslits = xslits
         self.yslits = yslits
+        
+        if type(shape) not in [list, tuple]:
+            shape = self.im.shape
         self.xs = self.dx * (np.arange(shape[0]) - self.db_pixel[0])
         self.ys = self.dy * (np.arange(shape[1]) - self.db_pixel[1])
     
     def apply_slits(self, xslits=None, yslits=None):
+        if xslits is not None or yslits is not None:
+            self.slits = True
         if xslits is not None:
             self.xslits = xslits
         else:
@@ -117,9 +140,10 @@ class Pilatus:
         self.inslits = inslits
         
     def show_image(self, aspect='auto', colormap='inferno', ax='new', 
-                  norm=None, slits=True):
+                  norm=None, slits=None, logscale=False):
         #im = images[n]
-        
+        if slits is None:
+            slits = self.slits
         if slits:
             if 'im1' not in dir(self):
                 self.apply_slits()
@@ -130,20 +154,30 @@ class Pilatus:
             im = self.im
             xs = self.xs  # first dimension is in phi direction
             ys = self.ys # second dimension is in tth direction
-        # imshow makes the second dimension horizontal. I don't know why.            
+        if logscale:
+            im[im<=0] = np.min(np.min(im[im>0])) #quick fix to log problems††
+            im = np.log(im)
+            
+        # imshow makes the second dimension horizontal. I don't know why.   
+        if norm == 'full':
+            norm = [np.min(np.min(im)), np.max(np.max(im))]
         if type(norm) in [list, tuple]:
             norm = mpl.colors.Normalize(norm[0], norm[-1])
         if ax == 'new':
             fig, ax = plt.subplots()
         ax.imshow(im, extent=[ys[0]*1e3, ys[-1]*1e3, xs[0]*1e3, xs[-1]*1e3],
                  aspect=aspect, origin='lower', norm=norm,
-                 cmap = colormap)    
-        ax.set_xlabel('position / mm')
-        ax.set_ylabel('position / mm')
+                 cmap = colormap)   
+        if self.calibration is not None:
+            ax.set_xlabel('position / mm')
+            ax.set_ylabel('position / mm')
+        else:
+            ax.set_xlabel('position / pixel')
+            ax.set_ylabel('position / pixel')            
         if 'tth' in dir(self):
             ax.set_title('centered at tth = ' + str(self.tth))
         return ax
-    
+
     def get_map_xyz(self, override=False):
         '''
         Get local cartesian coordinates for each pixel on detector
@@ -262,7 +296,7 @@ class Pilatus:
         
     def tth_spectrum(self, stepsize=0.05, tth=None, override=False,
                      slits=True, xslits=None, yslits=None,
-                     out='spectrum', 
+                     out='spectrum', verbose=True,
                      method='average', min_pixels=10):
         '''
         Returns, as specified by argument 'out', either
@@ -282,7 +316,8 @@ class Pilatus:
             elif out=='spectrum' and 'spectrum' in dir(self) \
             and self.stepsize==stepsize and self.method==method:
                 return self.spectrum
-        print('calculating spectrum for ' + self.name)
+        if verbose:
+            print('calculating spectrum for ' + self.name)
         self.method = method
         self.stepsize = stepsize
         
