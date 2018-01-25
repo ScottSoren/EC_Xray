@@ -12,56 +12,71 @@ copied from EC_MS on 17L09 as last commited to EC_MS with code c1c6efa
 from __future__ import print_function
 from __future__ import division
 
-import numpy as np
+import time
 import re
 import os #, sys    
+import numpy as np
 
 def synchronize(data_objects, t_zero='start', append=None, cutit=False, 
-                override=None, update=True, verbose=True):
+                override=None, update=True, file_number_type='EC',
+                verbose=True, ):
     '''
-    This will combine array data from multiple dictionaries into a single 
+    'synchronize' is the most important function of electropy/ECpy/EC_MS/EC_Xray
+    
+    It combines numpy array data from multiple dictionaries into a single 
     dictionary with all time variables aligned according to absolute time.
-    Data will be retained where the time spans overlap, unless cutit = 0, in 
-    which case all data will be retained, but with t=0 at the start of the overlap.
-    if t_zero is specified, however, t=0 will be set to t_zero seconds after midnight
+    If cutit=True, data will be retained in the interval of overlap. Otherwise,
+    all data will be retained, but with t=0 at the start of the overlap,
+    unless t_zero is specified (details below). 
     If append=1, data columns of the same name will be joined and filled with
     zeros for sets that don't have them so that all columns remain the same length
     as their time columns, and a data_column 'file number' will be added to 
-    keep track of where the data comes from. It's really quite nice... 
-    But it's a monster function.
-    Could likely benifit from being written from the ground up some time, but not now.
+    keep track of where the data comes from. 
     
     ----  inputs -----
         data_objects: traditionally a list of dictionaries, each of which has
     a key ['data_cols'] pointing to a list of keys for columns of data to be
     synchronized. data_objects can also contain objects with attribute data, in
-    which data_objects[i].data is used in the same way as data_objects normally is.
+    which data_objects[i].data is used in the same way as data_objects normally is,
+    and then, if update is True, replaced by the combined data set.
         t_zero: a string or number representing the moment that is considered t=0
-    in the synchronized dataset. If t_zero is a number, it is interpreted as time
-    in seconds since midnight on the day the datasets were started. t_zero='start'
-    means it starts at the start of the overlap. 'first' means t=0 at the earliest 
-    datapoint in any data set.
+    in the synchronized dataset. If t_zero is a number, it is interpreted as a
+    unix epoch time. t_zero='start' means it starts at the start of the overlap. 
+    'first' means t=0 at the earliest datapoint in any data set.
         append: True if identically named data columns should be appended. False
     if the data from the individual sets should be kept in separate columns. By 
-    default (append=None), append will get inside the function to True of all of
+    default (append=None), append will be set inside the function to True if all of
     the data sets have the same 'data type'.
+        file_number_type: When appending data, a column file_number is added
+    storing the file numbers corresponding to the data from datasets of type
+    file_number_type. combined_data['file number'] will thus have the same length
+    as combined_data[timecol] where timecol is the time variable for that data
+    type, i.e. 'time/s' for file_number_type='EC', as is the default.
         cutit: True if data from outside the timespan where all input datasets
-    overlap should be removed. This can sometimes make things a bit cleaner to 
-    work with in the front-panel scripts, but is not recommended.
+    overlap should be removed. This can make things a bit cleaner to work with 
+    in the front-panel scripts.
         override: True if you don't want the function to pause and ask for your
     consent to continue in the case that there is no range of overlap in the datasets.
     override = False helps you catch errors if you're importing the wrong datasets.
-    By default, override gets set to (not append). 
+    By default, override gets set to True if append is True. 
         update: True if you want object.data to be replaced with the synchronized
     dataset for any non-dictionary objects in data_objects
         verbose: True if you want the function to talk to you. Recommended, as it
-    helps catch your errors and my bugs. False if you want a clean terminal or stdout
-        
+    helps catch your mistakes and my bugs. False if you want a clean terminal or stdout
+    
     ---- output ----
         the combined and synchronized data set, as a dictionary
+    
+    It's really quite nice... 
+    But it's a monster function.
+    There's lots of comments in the code to explain the reasoning.
+    I'm happy for suggestions on how to improve! scott@fysik.dtu.dk
+    
     '''
     if verbose:
-        print('\n\nfunction \'synchronize\' at your service!')    
+        print('\n\nfunction \'synchronize\' at your service!') 
+        
+    from .import_data import timestamp_to_unix_time, unix_time_to_timestamp
     
     if type(data_objects) is not list:
         print('''The first argument to synchronize should be a list of datasets! 
@@ -71,6 +86,7 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
         data_objects = [data_objects, t_zero]
         t_zero = 'start'
     
+    # figure out which of the inputs, if any, are objects with attribute 'data' vs simply datasets:
     datasets = []
     objects_with_data = []
     for i, dataset in enumerate(data_objects):
@@ -79,26 +95,31 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
         else:
             try:
                 data = dataset.data
-            except AttributeError:
+            except AttributeError:  # just ignore objects that don't have attribute 'data'.
                 print('can\'t get data from data_object number ' + str(i))
                 continue
             objects_with_data += [dataset]
             datasets += [data]       
     
-    if append is None: #by default, append if all datasets are same type, 17G28
+    if append is None: #by default, append if all datasets are same type
         append = len({d['data_type'] for d in datasets}) == 1
     if override is None:
-        override = not append
+        override = append  # Without override, it checks for overlap.
+                           # So, I should override when I expect no overlap.
+                           # I expect no overlap when appending datasets
+                           # Thus, override should be True when append is True.
     if verbose:
         print('append is ' + str(append))
-        
-                              #prepare to collect some data in the first loop:
-    recstarts = []            #first recorded time in each file in seconds since midnight
-    t_start = 0               #latest start time (start of overlap) in seconds since midnight
-    t_finish = 60*60*24*7     #earliest finish time (finish of overlap) in seconds since midnight 
-    t_first = 60*60*24*7      #earliest timestamp in seconds since midnight
-    t_last = 0                #latest timestamp in seconds since midnight
-    hasdata = {}              #'combining number' of dataset with 0 if its empty or 1 if it has data
+    
+    now = time.time()  #now in unix epoch time, 
+    # ^ which is necessarily larger than the acquisition epochtime of any of the data.
+               #prepare to collect some data in the first loop:
+    recstarts = []            #first recorded time in unix epoch time
+    t_start = 0               #latest start time (start of overlap) in unix epoch time
+    t_finish = now            #earliest finish time (finish of overlap) in unix epoch time
+    t_first = now             #earliest timestamp in unix epoch time
+    t_last = 0                #latest timestamp in unix epoch time
+    hasdata = {}              #'combining number' of dataset with False if its empty or True if it has data
     
     combined_data = {'data_type':'combined', 'data_cols':[]}
     title_combined = ''
@@ -111,29 +132,32 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
         dataset['combining_number'] = nd
         if 'data_cols' not in dataset or len(dataset['data_cols']) == 0:
             print(dataset['title'] + ' is empty')
-            hasdata[nd] = 0
-            recstarts += [60*60*24*7] # don't want dataset list to be shortened when sorted later according to recstarts!
-            continue
-        hasdata[nd] = 1    
-        title_combined += dataset['title'] + '__as_' + str(nd) + '__and___'
+            hasdata[nd] = False
+            recstarts += [now] # don't want dataset list to be shortened when sorted later according to recstarts!
+            continue     #any dataset making it to the next line is not empty, i.e. has data.
+        hasdata[nd] = True    
+        if len(title_combined) > 0:
+            title_combined += '__and___'
+        title_combined += dataset['title'] + '__as_' + str(nd)
         if verbose:
             print('working on ' + dataset['title'])
             print('timestamp is ' + dataset['timestamp'])
-        t_0 = timestamp_to_seconds(dataset['timestamp'])
-        
-        t_f = 0
-        t_s = 60*60*24*7
+            
+        t_0 = dataset['tstamp'] # UNIX epoch time !!! The t=0 for the present dataset
+
+        t_s = now           # will decrease to the earliest start of time data in the dataset        
+        t_f = 0             # will increase to the latest finish of time data in the dataset
         
         for col in dataset['data_cols']:
             if is_time(col):
                 try:
-                    t_s = min(t_s, t_0 + dataset[col][0])   #earliest start of time data in dataset
-                    t_f = max(t_f, t_0 + dataset[col][-1])  #latest finish of time data in dataset
-                except IndexError:
+                    t_s = min(t_s, t_0 + dataset[col][0])   #earliest start of time data in dataset in epoch time
+                    t_f = max(t_f, t_0 + dataset[col][-1])  #latest finish of time data in dataset in epoch time
+                except IndexError:  #if dataset['data_cols'] points to nonexisting data, something went wrong.
                     print(dataset['title'] + ' may be an empty file.')
-                    hasdata[nd] = 0
+                    hasdata[nd] = False # files that are empty after the header are caught here
                     
-        if hasdata[nd] == 0:
+        if not hasdata[nd]:  # move on from empty files
             continue
         recstarts += [t_s]               #first recorded time
     
@@ -142,179 +166,213 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
         t_start = max([t_start, t_s])    #latest start of time variable overall
         t_finish = min([t_finish, t_f])  #earliest finish of time variable overall
     
-    title_combined = title_combined[:-6]
-    combined_data['title'] = title_combined
-    combined_data['tspan_0'] =    [t_start, t_finish] #overlap start and finish times as seconds since midnight
-    combined_data['tspan_1'] = [t_start - t_first, t_finish - t_first]    # start and finish times as seconds since earliest start   
-
+    # out of the first loop. We've got the title to be given to the new combined dataset, 
+    # the tspan of all the data in unix epoch time, info on which sets if any are empty,
+    # and the start of data recording for each data set. Now, we save that info
+    # and use it to get ready for the second loop.
+    
+    # t_zero is the UNIX epoch time corresponding to t=0 in the retunred data set.
+    # It can be 'first', 'last', 'start', or 'finish', which work as illustrated here:
+    # | = timestamp, *--* = data acquisition
+    # dataset1 | *----------------------------*
+    # dataset2 |       *-----------------------------------------*
+    # dataset3              |     *----------------------*
+    # t =      first        last  start      finish            
+    if verbose:
+        print('first: ' + str(t_first) + ', last: ' + str(t_last) + 
+        ', start: ' + str(t_start) + ', finish: ' + str(t_finish))   
+        
+    if t_start > t_finish and not override:
+        print('No overlap. Check your files.\n')
+        offerquit()  
+        
     if t_zero == 'start':
         t_zero = t_start
     elif t_zero == 'first':
         t_zero = t_first
     elif t_zero == 'last':
         t_zero = t_last
-        
+    elif t_zero == 'finish':
+        t_zero = t_finish
+    
+    # some stuff is now ready to put into combined_data:
+    
+    combined_data['title'] = title_combined
+    combined_data['tspan_0'] = [t_start, t_finish] 
+    # ^ overlap start and finish times as unix epoch times
+    combined_data['tspan_1'] = [t_start - t_first, t_finish - t_first]    
+    # ^ overlap start and finish times as seconds since earliest start 
+    combined_data['tspan'] = [t_start - t_zero, t_finish - t_zero]    #start and finish times of overlap as seconds since t=0  
+    combined_data['tspan_2'] = combined_data['tspan'] #old code calls this tspan_2.
+
+    combined_data['tstamp'] = t_zero
+    combined_data['timestamp'] = unix_time_to_timestamp(t_zero) #we want that timestamp refers to t=0
+    
     combined_data['first'] = t_first - t_zero
     combined_data['last'] = t_last - t_zero
     combined_data['start'] = t_start - t_zero
     combined_data['finish'] = t_finish - t_zero
-    
-    combined_data['timestamp'] = seconds_to_timestamp(t_zero) #we want that timestamp refers to t=0, duh!
 
-    combined_data['tspan'] = [t_start - t_zero, t_finish - t_zero]    #start and finish times of overlap as seconds since t=0  
-    combined_data['tspan_2'] = combined_data['tspan'] #old code calls this tspan_2.
-    
-    if verbose:
-        print('first: ' + str(t_first) + ', last: ' + str(t_last) + 
-        ', start: ' + str(t_start) + ', finish: ' + str(t_finish))
-        
-    
-    if t_start > t_finish and not override:
-        print('No overlap. Check your files.\n')
-        offerquit()
-    
-    print(hasdata)
+    # Deal with the cases that all or all but one dataset is empty:
     N_notempty = len([1 for v in hasdata.values() if v==1])
     if N_notempty == 0:
-        print('First loop indicates that no files have data!!! Synchronize will return an empty dataset!!!')
+        print('First loop indicates that no files have data!!! ' + 
+              'synchronize will return an empty dataset!!!')
     elif N_notempty == 1:
         print('First loop indicates that only one dataset has data! Synchronize will just return that dataset!')
         combined_data = next(datasets[nd] for nd, v in hasdata.items() if v==1)
         print('\nfunction \'synchronize\' finished!\n\n')
         return combined_data
     
-        #this is how I make sure to combine the datasets in the right order!     
+    # Sort datasets by start of recording so that in the second loop they are combined in the right order   
     I_sort = np.argsort(recstarts)    
     datasets = [datasets[I] for I in I_sort]       
-        #sort by first recorded absolute time. This is so that successive datasets of same type can be joined,
-        #with the time variables increasing all the way through 
-        #(note: EC lab techniques started together have same timestamp but different recstart)
+        #note: EC lab techniques started together have same tstamp but different recstart
     
-    #and loop again to synchronize the data and put it into the combined dictionary.
-    
+    # It's very nice when appending data from multiple files (EC data especially, 
+    # from experience), to be able to select data later based on file number
     if (append and 
-        'EC' in {d['data_type'] for d in datasets}): #condition added 17I21
-        #add a datacolumn that can be used to separate again afterwards by file
-        #as of now (17G28) can't think of an obvious way to keep previous file numbers
-        combined_data['file number'] = [] #'file_number' renamed 'file number' for consistency 17H09
+        file_number_type in {d['data_type'] for d in datasets}): 
+        combined_data['file number'] = [] 
+        fn_timecol = get_timecol(data_type=file_number_type)
 
+    # ... And loop again to synchronize the data and put it into the combined dictionary.
     if verbose:
         print('---------- syncrhonize entering second loop -----------')
         
     for i, dataset in enumerate(datasets):
         nd = dataset['combining_number']
-        if hasdata[nd] == 0:
+        # ^ note, nd is the number of the dataset from the first loop, and is 
+        #not scrambled by the sorting of the datasets according to recstart done above.
+        if not hasdata[nd]: 
             if verbose:
-                print('skipping this dataset, because its combining number, ' + str(nd) + ' is in the empty files list')
+                print('skipping this dataset, because its combining number, ' + 
+                      str(nd) + ', is in the empty files list')
             continue
-        elif verbose:
-            print('proceding with this dataset, with combining number ' + str(nd))
-            
+        
         if verbose:
-            print('cols in ' + dataset['title'] + ':\n' + str(dataset['data_cols']))
-            print('cols in combined_data:\n' + str(combined_data['data_cols']))
-        #this way names in combined_data match the order the datasets are input with
-        t_0 = timestamp_to_seconds(dataset['timestamp'])
+            print('proceding with this dataset, with combining number ' + str(nd))
+            #print('cols in ' + dataset['title'] + ':\n' + str(dataset['data_cols']))
+            #print('cols in combined_data:\n' + str(combined_data['data_cols']))
+            
+        # the synchronization is based on the offset of the individual dataset
+        # with respect to t_zero, both in unix time.
+        t_0 = dataset['tstamp']
         offset = t_0 - t_zero
         
-        #first figure out where I need to cut, by getting the indeces striclty corresponding to times lying within the overlap
-            
-        I_keep = {}    
-            #figure out what to keep:
-        for col in dataset['data_cols']:     
-                #fixed up a bit 17C22, but this whole function should just be rewritten.
-            if is_time(col):
-                if verbose:
-                    print('timeshifting time column ' + col)
-                t = dataset[col] + t_0 #absolute time
-                I_keep[col] = [I for (I, t_I) in enumerate(t) if t_start < t_I < t_finish]
-        
-        #then cut, and put it in the new data set
-        #first, get the present length of 'time/s' to see how much fill I need in the case of appending EC data from different methods.
+        # Prepare to cut based on the absolute (unix epoch) time interval. 
+        if cutit:
+            masks = {}     #will store a mask for each timecol to cut the corresponding cols with
+            for col in dataset['data_cols']:     
+                if is_time(col):
+                    if verbose:
+                        print('preparing mask to cut according to timecol ' + col)
+                    t = dataset[col]
+                    masks[col] = np.logical_and((t_start - t_0) < t, t < (t_finish - t_0))
+                    
+        # Check how many rows will be needed for relevant data types when appending data,
+        #and append to in the 'file number' column
         if append:
-            print('append is True')
-            if 'time/s' in dataset:
-                l1 = len(dataset['time/s'])
-                fn = np.array([i]*l1)
-                if dataset['data_type'] == 'EC':
-                    combined_data['file number'] = np.append(combined_data['file number'], fn) 
+            # sometimes, a certain data col is absent from some files of the same
+            #data type, but we still want it to match up with the corresponding 
+            #time variable for the rest of the files in combined_data. The most
+            #common example is OCV between other methods in EC data, which has no 
+            #current. When that happens, we want the filler values 0 to make sure
+            #all the collumns line up. oldcollength and collength will help with that:
+            oldcollength = {} # will store the existing length of each data col
+            for col in combined_data['data_cols']:
+                if is_time(col):
+                    oldcollength[col] = len(combined_data[col])
+            collength = {}  # will store the length to be appended to each data col
+            for col in dataset['data_cols']:
+                if is_time(col):
+                    collength[col] = len(dataset[col])
+                    if col not in oldcollength.keys():
+                        oldcollength[col] = 0
+                    else: #the case that the timecol is in both combined_data and dataset
+                        if verbose:  
+                            print('prepared to append data according to timecol ' + col)
+            # now, fill in file number according to datasets of type file_number_type            
+            if dataset['data type'] == file_number_type: 
+                fn = np.array([i] * collength[fn_timecol])             
+                combined_data['file number'] = np.append(combined_data['file number'], fn) 
+                if verbose:    
                     print('len(combined_data[\'file number\']) = ' + str(len(combined_data['file number'])))
-            else:
-                print('\'time/s\' in Dataset is False')
-            if 'time/s' in combined_data:
-                l0 = len(combined_data['time/s'])     
-            else:
-                l0 = 0
+                    
+        # now we're ready to go through the columns and actually process the data
+        #for smooth entry into combined_data
         for col in dataset['data_cols']:
-            #print(col)
-            data = dataset[col] 
+            data = dataset[col]
+            # processing: cutting
             if cutit:           #cut data to only return where it overlaps
-                data = data[I_keep[get_time_col(col)]]  
-                    #fixed up a bit 17C22, but this whole function should just be rewritten. 
+                data = data[masks[get_timecol(col)]]  
+            # processing: offsetting 
             if is_time(col):
                 data = data + offset
-            
+            # processing: for appended data
             if append:
+                # get data from old column for appending
                 if col in combined_data:
-                    data_0 = combined_data[col]
-                else:
-                    data_0 = np.array([])
-                
-                if get_time_col(col) == 'time/s': #rewritten 17G26 for fig3 of sniffer paper
-                    #I got l0 before entering the present loop.
-                    l2 = len(data_0)
-                    if l0>l2:
-                        fill = np.array([0]*(l0-l2))
-                        #print('filling ' + col + ' with ' + str(len(fill)) + ' zeros')
-                        data_0 = np.append(data_0, fill)
-                
-                #print('len(data_0) = ' + str(len(data_0)) + ', len(data) = ' + str(len(data)))
-                data = np.append(data_0, data)
-                #print('len(data_0) = ' + str(len(data_0)) + ', len(data) = ' + str(len(data)))
-                    
+                    olddata = combined_data[col]    
+                #but first...
+                # proccessing: ensure elignment with timecol for appended data
+                l1 = len(data) + len(olddata)
+                timecol = get_timecol(col)
+                l0 = oldcollength[timecol] + collength[timecol] 
+                # ^ I had to get these lengths before because I'm not sure whether 
+                #timecol will have been processed first or not...
+                if l0 > l1: #this is the case if the previous dataset was missing col but not timecol
+                    filler = np.array([0] * (l0 - l1))
+                    olddata = data.append(olddata, filler) 
+                    # ^ and now len(olddata) = len(combined_data[timecol])
+                # APPEND!
+                data = np.append(olddata, data)
+            # processing: ensuring unique column names for non-appended data
             else:
                 if col in combined_data:
                     print('conflicting versions of ' + col + '. adding subscripts.')
                     col = col + '_' + str(nd)                        
-                    
+            
+            # ---- put the processed data into combined_data! ----
             combined_data[col] = data
+            # And make sure it's in data_cols
             if col not in combined_data['data_cols']:
                 combined_data['data_cols'].append(col)  
-        #offerquit()          
+         
         
-        #keep all of the metadata from the original datasets (added 16J27)
+        #keep all of the metadata from the original datasets
         for col, value in dataset.items():
-            if col not in dataset['data_cols'] and col not in ['combining_number', 'data_cols']:     #fixed 16J29
+            if col not in dataset['data_cols'] and col not in ['combining_number', 'data_cols']:
                 if col in combined_data.keys():
                     combined_data[col + '_' + str(nd)] = value
                 else:
                     combined_data[col] = value
                     
-    #17G28: There's still a problem if the last dataset is missing columns! Fixing now.  
-    if 'time/s' in combined_data:
-        combined_data['tspan_EC'] = [combined_data['time/s'][0], combined_data['time/s'][-1]] #this is nice to use
-        l1 = len(combined_data['time/s'])
-        for col in combined_data['data_cols']:   
-            if get_time_col(col) == 'time/s': #rewritten 17G26 for fig3 of sniffer paper
-                l2 = len(combined_data[col])
-                if l1>l2:
-                    fill = np.array([0]*(l1-l2))
-                    print('filling ' + col + ' with ' + str(len(fill)) + ' zeros')
-                    combined_data[col] = np.append(combined_data[col], fill)
-        if append and 'file number' in combined_data.keys():
-            combined_data['data_cols'].append('file number') #for new code
-            combined_data['file_number'] = combined_data['file number'] #for old code
-            combined_data['data_cols'].append('file_number') #for old code
+    # And now we're out of the loop!               
+    #There's still a problem if the last dataset is missing columns! Fixing that here. 
+    for col in combined_data['data_cols']:
+        l1 = len(combined_data[col])
+        timecol = get_timecol(col)
+        l0 = len(combined_data[timecol])
+        if l0 > l1:
+            filler = np.array([0] * (l0 - l1))
+            combined_data[col] = np.append(combined_data[col], filler)
 
-            
+    
+    # add 'file number' to data_cols
+    if 'file number' in combined_data.keys() and 'file number' not in combined_data['data_cols']:    
+        combined_data['data_cols'].append('file number') #for new code
+
+    # check that there's actually data in the result of all this        
     if len(combined_data['data_cols']) == 0:
         print('The input did not have recognizeable data! Synchronize is returning an empty dataset!')    
 
+    # update the objects (e.g. ScanImages object in EC_Xray). This is nice!
     if update:
         for instance in objects_with_data:
             instance.data = combined_data
-
-        
+    
+    # and, we're done!
     if verbose:
         print('function \'synchronize\' finsihed!\n\n')   
     
@@ -365,7 +423,7 @@ def cut_dataset(dataset_0, tspan=None):
         #print(col + ', length = ' + str(len(dataset[col])))
         if is_time(col): #I actually don't need this. 
             continue #yes I do, otherwise it cuts it twice.
-        timecol = get_time_col(col)
+        timecol = get_timecol(col)
         #print(timecol + ', timecol length = ' + str(len(dataset[timecol])))
         if timecol in indeces.keys():
             #print('already got indeces, len = ' + str(len(indeces[timecol])))
@@ -443,23 +501,25 @@ def get_type(col):
         return 'MS'
     if is_EC_data(col):
         return 'EC'
-    return 'Xray'
+    return 'Xray' # to be refined later...
 
-def get_time_col(col, verbose=False):
-    if is_time(col):
-        time_col = col
-    elif is_EC_data(col): 
-        time_col = 'time/s'
-    elif is_Xray_data(col):
-        time_col = 't' #I do not like this. I will try and get them to fix this in SPEC
-    elif is_MS_data(col):
-        time_col = col.replace('-y','-x')        
+def get_timecol(col=None, data_type=None, verbose=False):
+    if data_type is not None:
+        data_type = get_type(col)
+    if data_type == 'EC':
+        timecol = 'time/s'
+    elif data_type == 'MS':
+        if col is None:
+            timecol = 'M4-x' # probably the least likely timecol to be missing from MS data
+        else:
+            timecol = col[:-2] + '-x'
+    elif data_type == 'Xray':
+        timecol = 't' # to be refined later...
     else:
-        print('don\'t know what ' + col + ' is or what it\'s time col is.')
-        time_col = None
+        timecol = None
     if verbose:
-        print('\'' + col + '\' should correspond to time col \'' + str(time_col) +'\'')
-    return time_col
+        print('\'' + str(col) + '\' should correspond to timecol \'' + str(timecol) +'\'')
+    return timecol
 
 def timestamp_to_seconds(timestamp):
     '''
@@ -514,7 +574,7 @@ def sort_time(dataset, data_type='EC', verbose=False):
                 print('working on ' + col)
             data = dataset[col] #do I need the copy?
             if get_type(col) in data_type: #retuns 'EC' or 'MS', else I don't know what it is.
-                time_col = get_time_col(col, verbose)
+                time_col = get_timecol(col, verbose)
                 if time_col in sort_indeces.keys():
                     indeces = sort_indeces[time_col]
                 else:

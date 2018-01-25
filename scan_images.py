@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat Dec  9 00:54:57 2017
-
 @author: scott
 """
 import os
@@ -499,8 +498,8 @@ class ScanImages:
         animation.write_videofile(title, fps=fps)  
         
     
-    def make_movie(self, duration=20, fps=24,
-                   title='default', norm='default', 
+    def make_movie(self, title='default', duration=20, fps=24,
+                   norm='default', 
                    slits=True, xslits=None, yslits=[60, 430]):
         '''
         '''

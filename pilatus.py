@@ -108,6 +108,8 @@ class Pilatus:
         self.ys = self.dy * (np.arange(shape[1]) - self.db_pixel[1])
     
     def apply_slits(self, xslits=None, yslits=None):
+        if xslits is not None or yslits is not None:
+            self.slits = True
         if xslits is not None:
             self.xslits = xslits
         else:
