@@ -12,7 +12,6 @@ def numerize(data):
     for col in data['data cols']: #numerize!
         data[col] = np.array(data[col])    
 
-
 def load_from_csv(filepath, multiset=False):
     
     f = open(filepath,'r') # read the file!
@@ -168,15 +167,24 @@ def download_data(IDs='today',
         return datasets
         
             
-            
+def text_to_data1(*args, **kwargs):
+    '''
+    Hogg (Blackbeard's computer) is loading the wrong text_to_data function.
+    This will fix that.
+    '''
+    return text_to_data(*args, **kwargs)
 
 def text_to_data(file_lines, title='get_from_file',
                  data_type='EC', N_blank=10, verbose=True,
                  header_string=None, timestamp=None, ):
     '''
-    This method will organize data in the lines of text from an EC or MS file 
-    into a dictionary as follows (plus a few more keys)
-    {'title':title, 'header':header, 'colheader1':[data1], 'colheader2':[data2]...}
+    This method will organize data in the lines of text from a file useful for
+    electropy into a dictionary as follows (plus a few more keys)
+    {'title':title, 'header':header, 'timestamp':timestamp,
+     'data_cols':[colheader1, colheader2, ...],
+     colheader1:[data1], colheader2:[data2]...}
+     So far made to work with SPEC files (.csv), XAS files (.dat), 
+     EC_Lab files (.mpt), and cinfdata files (.txt)
     '''    
     if verbose:
         print('\n\nfunction \'text_to_data\' at your service!\n')
@@ -191,6 +199,13 @@ def text_to_data(file_lines, title='get_from_file',
     commacols = []                   #will catch if data is recorded with commas as decimals.
     
     loop = False
+
+    if data_type == 'SPEC':
+        N_head = 1 #the column headers are the first line
+    elif data_type == 'XAS':
+        datacollines = False # column headers are on multiple lines, this will be True for those lines
+        col_headers = []   #this is the most natural place to initiate the vector
+
     
     for nl, line in enumerate(file_lines):
         
@@ -249,14 +264,35 @@ def text_to_data(file_lines, title='get_from_file',
                             print('timestamp \'' + timestamp + '\' found in line ' + str(nl))                 
                 header_string = header_string + line
                 
+            elif data_type == 'XAS':
+                if datacollines:
+                    if line == '': #then we're done geting the column headers
+                        datacollines = False
+                        #header = False  #and ready for data.
+                        N_head = nl + 1 # so that the next line is data!
+                        if verbose:
+                            print('data col lines finish on line' + str(nl) + 
+                                  '. the next line should be data')
+                    else:
+                        col_headers += [line.strip()]    
+                        DataDict[line.strip()] = []
+                elif line == 'Data:':  #then we're ready to get the column headers
+                    datacollines = True
+                    if verbose:
+                        print('data col lines start on line ' + str(nl+1))
+                a = re.search('([0-9]{2}\:){2}[0-9]{2}', line)
+                if a is not None:
+                    timestamp = a.group()
+                    if verbose:
+                        print('timestamp \'' + timestamp + '\' found in line ' + str(nl)) 
+                header_string = header_string + line
             
         elif nl == N_head - 1:      #then it is the column-header line
                #(EC-lab includes the column-header line in header lines)
             #col_header_line = line
             col_headers = line.strip().split('\t')
-            DataDict['N_col']=len(col_headers) 
-            DataDict['data_cols'] = deepcopy(col_headers)   #do we need deepcopy? #will store names of columns containing data
-            #DataDict['data_cols'] = col_headers.copy()
+            DataDict['N_col'] = len(col_headers) 
+            DataDict['data_cols'] = col_headers.copy()    #will store names of columns containing data
             for col in col_headers:
                 DataDict[col] = []              #data will go here    
             header_string = header_string+line #include this line in the header

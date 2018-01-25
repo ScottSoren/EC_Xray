@@ -77,8 +77,20 @@ def get_creation_time(filepath):
             # so we'll settle for when its content was last modified.
             return stat.st_mtime    
 
+def timestamp_from_file(filepath, verbose=True):
+    a = re.search('[0-9]{2}h[0-9]{2}', filepath)
+    if a is None:
+        if verbose:
+            print('trying to read creation time')
+        timestamp = get_creation_timestamp(filepath)
+    else:
+        if verbose:
+            print('getting timestamp from filename ' + filepath)
+        timestamp = timetag_to_timestamp(filepath)
+    return timestamp
 
-def load_from_csv(filepath, multiset=False, timestamp=None):
+
+def load_from_csv(filepath, multiset=False, timestamp=None, verbose=True):
     '''
     This function is made a bit more complicated by the fact that some csvs
     seem to have multiple datasets appended, with a new col_header line as the
@@ -87,6 +99,8 @@ def load_from_csv(filepath, multiset=False, timestamp=None):
     if timestamp = None, the timestamp will be the date created
     I hate that SPEC doesn't save absolute time in a useful way.
     '''
+    if verbose:
+        print('function \'load_from_csv\' at your service!')
     if timestamp is None:
         a = re.search('[0-9]{2}h[0-9]{2}', filepath)
         if a is None:
@@ -139,6 +153,8 @@ def load_from_csv(filepath, multiset=False, timestamp=None):
     
     numerize(data)
     datasets += [data]
+    if verbose:
+        print('function \'load_from_csv\' finished!')
     if multiset:
         return datasets
     return data
@@ -250,17 +266,23 @@ def import_text(full_path_name='current', verbose=True):
     
     if verbose:
         print('\nfunction \'import_text\' finished!\n\n')    
-    return file_lines    
-    
-    
-def text_to_data(file_lines, title='get_from_file',
-                 data_type='EC', N_blank=10, verbose=True,
-                 header_string=None, timestamp=None, ):
+    return file_lines        
+
+
+def text_to_data(file_lines, title='get_from_file', timestamp=None,
+                 data_type='EC', N_blank=10, verbose=True, sep=None,
+                 header_string=None):
     '''
-    This method will organize data in the lines of text from an EC or MS file 
-    into a dictionary as follows (plus a few more keys)
-    {'title':title, 'header':header, 'colheader1':[data1], 'colheader2':[data2]...}
-    '''    
+    This method will organize data in the lines of text from a file useful for
+    electropy into a dictionary as follows (plus a few more keys)
+    {'title':title, 'header':header, 'timestamp':timestamp,
+     'data_cols':[colheader1, colheader2, ...],
+     colheader1:[data1], colheader2:[data2]...}
+     So far made to work with SPEC files (.csv), XAS files (.dat), 
+     EC_Lab files (.mpt).
+     If you need to import cinfdata files (.txt), you are in the wrong place.
+     This is EC_Xray's import_data, not EC_MS!!!
+    '''      
     if verbose:
         print('\n\nfunction \'text_to_data\' at your service!\n')
     
@@ -273,9 +295,20 @@ def text_to_data(file_lines, title='get_from_file',
     commacols = []                   #will catch if data is recorded with commas as decimals.
     
     loop = False
+
+    if data_type == 'SPEC':
+        N_head = 1 #the column headers are the first line
+        if sep is None:
+            sep = ','
+    elif data_type == 'XAS':
+        datacollines = False # column headers are on multiple lines, this will be True for those lines
+        col_headers = []   #this is the most natural place to initiate the vector
     
+    if sep is None:  #EC, XAS, and MS data all work with '\t'
+        sep = '\t'
+
     for nl, line in enumerate(file_lines):
-        
+        l = line.strip()        
         if nl < N_head - 1:            #we're in the header
         
             if data_type == 'EC':
@@ -290,7 +323,7 @@ def text_to_data(file_lines, title='get_from_file',
                     N_head = int(N_head_object.group())
                     if verbose:
                         print('N_head \'' + str(N_head) + '\' found in line ' + str(nl))
-                elif re.search('Acquisition started',line):
+                elif timestamp is None and re.search('Acquisition started',line):
                     timestamp_object = re.search(r'[\S]*\Z',line.strip())
                     timestamp = timestamp_object.group()
                     if verbose:
@@ -306,29 +339,53 @@ def text_to_data(file_lines, title='get_from_file',
                     dataset['loop number'] += N * [n]
                     
                 header_string = header_string + line
-                
+
+
+            elif data_type == 'XAS':
+                if datacollines:
+                    if l == '': #then we're done geting the column headers
+                        datacollines = False
+                        #header = False  #and ready for data.
+                        N_head = nl + 1 # so that the next line is data!
+                        dataset['data_cols'] = col_headers.copy()
+                        if verbose:
+                            print('data col lines finish on line' + str(nl) + 
+                                  '. the next line should be data')
+                    else:
+                        col_headers += [l]    
+                        dataset[l] = []
+                elif l == 'Data:':  #then we're ready to get the column headers
+                    datacollines = True
+                    if verbose:
+                        print('data col lines start on line ' + str(nl+1))
+                a = re.search('([0-9]{2}\:){2}[0-9]{2}', line)
+                if timestamp is None and a is not None:
+                    timestamp = a.group()
+                    if verbose:
+                        print('timestamp \'' + timestamp + '\' found in line ' + str(nl)) 
+                header_string = header_string + line                
             
         elif nl == N_head - 1:      #then it is the column-header line
                #(EC-lab includes the column-header line in header lines)
             #col_header_line = line
-            col_headers = line.strip().split('\t')
+            col_headers = [col.strip() for col in l.split(sep=sep)]
             dataset['N_col']=len(col_headers) 
             dataset['data_cols'] = col_headers.copy()  #will store names of columns containing data
             #DataDict['data_cols'] = col_headers.copy()
             for col in col_headers:
                 dataset[col] = []              #data will go here    
-            header_string = header_string+line #include this line in the header
+            header_string = header_string + line #include this line in the header
             if verbose:
                 print('Data starting on line ' + str(N_head) + '\n')
             
 
         else:                   # data, baby!
-            line_data = line.strip().split('\t')
+            line_data = [dat.strip() for dat in l.split(sep=sep)]
             if not len(line_data) == len(col_headers):
                 if verbose:
                     print(list(zip(col_headers,line_data)))
                     print('Mismatch between col_headers and data on line ' + str(nl) + ' of ' + title)
-                if nl == N_lines - 1:
+                if nl == N_lines - 1 and data_type=='MS':    # this is usually not useful!
                     print('mismatch due to an incomplete last line of ' + title + '. I will discard the last line.')
                     break
             for col, data in zip(col_headers, line_data):
@@ -373,3 +430,32 @@ def text_to_data(file_lines, title='get_from_file',
     if verbose:
         print('\nfunction \'text_to_data\' finished!\n\n')    
     return dataset
+
+
+
+def load_from_file(full_path_name='current', title='file', timestamp=None,
+                 data_type='EC', N_blank=10, verbose=True):
+    '''
+    This method will organize the data in a file useful for
+    electropy into a dictionary as follows (plus a few more keys)
+    {'title':title, 'header':header, 'timestamp':timestamp,
+     'data_cols':[colheader1, colheader2, ...],
+     colheader1:[data1], colheader2:[data2]...}
+     So far made to work with SPEC files (.csv), XAS files (.dat), 
+     EC_Lab files (.mpt).
+     If you need to import cinfdata files (.txt), you are in the wrong place.
+     Use EC_MS's import_data instead!!!
+     '''
+    if title == 'file':
+        folder, title = os.path.split(full_path_name)
+    file_lines = import_text(full_path_name, verbose)
+    dataset = text_to_data(file_lines=file_lines, title=title, data_type=data_type, 
+                           timestamp=timestamp, N_blank=N_blank, verbose=verbose)
+    if dataset['timestamp'] is None:
+        dataset['timestamp'] = timestamp_from_file(full_path_name, verbose=verbose)
+    numerize(dataset)
+
+    return dataset 
+    
+    
+    

@@ -11,7 +11,7 @@ import re
 import numpy as np
 from matplotlib import pyplot as plt
 
-from .importing_data import load_from_csv
+from .import_data import load_from_csv
 
 def plot_spectrum(data, ax='new', tth_str='TwoTheta', pd_str='pd6', color='k', 
                   normalize=False, tth_normalize='max',

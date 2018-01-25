@@ -9,6 +9,7 @@ Created on Thu Nov 23 07:22:43 2017
 '''
 This is a fill-in untill I write something to calculate powder diffraction
 from an ase object with periodic boundary conditions.
+Or, better, query the data from the materials project.
 '''
 
 from matplotlib import pyplot as plt

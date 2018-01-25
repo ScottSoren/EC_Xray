@@ -28,8 +28,21 @@ def get_tth(hkl=[1,1,1], d=None, lam=None, a0=3.61e-10, E=1.7e4):
         lam = h * c / (E * qe)
     if d is None:
         d = a0 / (np.sqrt(hkl[0]**2 + hkl[1]**2 + hkl[2]**2))
-    th = np.arcsin(lam / (2 * d)) * 180 / np.pi
+    TH = np.arcsin(lam / (2 * d))
+    th =  TH * 180 / np.pi # from radians to degrees
     tth = 2 * th
     return tth
+    
+def get_d(tth=None, E=1.7e4):
+    lam = h * c / (E * qe)
+    TTH = tth * np.pi / 180 # from degrees to radians
+    d = lam / (2 * np.sin(TTH / 2))
+    return d
+    
+def tth_new_energy(tth_old=20, E_old = 1.7e4, E=9e3):
+    d = get_d(tth=tth_old, E=E_old)
+    tth = get_tth(d=d, E=E)
+    return tth    
+    
     
     

@@ -19,4 +19,4 @@ from EC_Xray.pilatus import *
 from EC_Xray.scan_images import *
 from EC_Xray.XRD import *
 
-
+from EC_Xray.misc import *
