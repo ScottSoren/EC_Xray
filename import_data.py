@@ -6,7 +6,7 @@ Created on Sun Dec 10 03:17:41 2017
 @author: scott
 """
 import os, platform, re, codecs
-import time, datetime
+import time, datetime, pytz  #all three seem necessary for dealing with timezones.
 import numpy as np
 
 float_match = '[-]?\d+[\.]?\d*(e[-]?\d+)?'     #matches floats like '-3.54e4' or '7' or '245.13' or '1e-15'
@@ -30,11 +30,36 @@ def get_empty_set(cols, **kwargs):
     data['data_cols'] = cols
     return data
 
-def timestamp_to_unix_time(timestamp, date='today'):
+def parse_timezone(tz=None):
+    '''
+    Gets a timezone object from a timezone string. Includes some abbreviations
+    useful for Scott. If the input is not a string, it is returned as is.
+    '''
+    abbreviations = {'CA':'US/Pacific', 'DK':'Europe/Copenhagen',}
+    if tz in abbreviations:
+        return pytz.timezone(abbreviations[tz])
+    elif type(tz) is str:
+        return pytz.timezone(tz)
+    else:
+        return tz
+
+def timestamp_to_epoch_time(timestamp, date='today', tz=None):
     '''
     Possibly overly idiot-proof way to convert a number of timestamps read
-    from my data into unix times.
+    from my data into epoch (unix) time. 
+    
+    tz is the Timezone, which is only strictly necessary when synchronizing
+    data taken at different places or accross dst at a place with different dst 
+    implementation than the local (dst is stupid!). 
+    If timezone is a number, it is interpreted as the offset from GMT of the
+    data. 
+    
+    The epoch time is referred to here and elsewhere as tstamp.
     '''
+    if tz is not None:
+        tz = parse_timezone(tz)
+        print('getting epoch time given a timestamp local to ' + str(tz))
+        epoch = pytz.utc.localize(datetime.datetime.utcfromtimestamp(0))
     if timestamp == 'now':
         return time.time()
     elif type(timestamp) is time.struct_time:
@@ -48,9 +73,15 @@ def timestamp_to_unix_time(timestamp, date='today'):
         print('\'timestamp_to_unix_time\' is assuming' + 
               ' the date and timestamp are input in the same string.')
         try:
-            unix_time = time.mktime(time.strptime(timestamp))
+            if tz is None:
+                struct = time.strptime(timestamp)
+                tstamp = time.mktime(struct)
+            else: 
+                dt_naive = datetime.datetime.strptime(timestamp, '%a %b %d %H:%M:%S %Y')
+                dt = tz.localize(dt_naive)
+                tstamp = (dt - epoch).total_seconds()
             print('timestamp went straight into time.strptime()! Returning based on that.')
-            return unix_time
+            return tstamp
         except ValueError:
             print('bit \'' + timestamp + '\' is not formatted like ' + 
                   'time.strptime() likes it. Checking another format')
@@ -71,14 +102,33 @@ def timestamp_to_unix_time(timestamp, date='today'):
     #h, m, s = (int(n) for n in timestamp.split(':'))
     #D, M, Y = (int(n) for n in re.split('[-/]', date))
     if date == 'today':
-        struct = time.localtime()
-        date = str(struct.tm_mon) + '/' + str(struct.tm_mday) + '/' + str(struct.tm_year)
-    struct = time.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
-    unix_time = time.mktime(struct)
-    return unix_time
+        date = time.strftime('%m/%d/%Y')
+    if tz is None:
+        struct = time.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
+        tstamp = time.mktime(struct)
+    else:
+        dt_naive = datetime.datetime.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
+        dt = tz.localize(dt_naive)
+        tstamp = (dt - epoch).total_seconds()
+        
+    return tstamp
     
-def unix_time_to_timestamp(tstamp):
-    struct = time.localtime(tstamp)
+def epoch_time_to_timestamp(tstamp, tz=None):
+    '''
+    tz is the Timezone, which is only strictly necessary when synchronizing
+    data taken at different places or accross dst at a place with different dst 
+    implementation than the local (dst is stupid!). 
+    If timezone is a number, it is interpreted as the offset from GMT of the
+    data in hours (+1 for Denmark, -8 for California)
+    '''
+    if tz is None:
+        struct = time.localtime(tstamp)
+    else:
+        tz = parse_timezone(tz)
+        print('getting the timestamp local to ' + str(tz) + ' from epoch time.')
+        dt_utc = datetime.datetime.utcfromtimestamp(tstamp)
+        dt_tz = tz.fromutc(dt_utc)
+        struct = dt_tz.timetuple()
     hh = str(struct.tm_hour)
     if len(hh) == 1:
         hh = '0' + hh
@@ -337,9 +387,9 @@ def import_text(full_path_name='current', verbose=True):
 
 
 def text_to_data(file_lines, title='get_from_file', 
-                 timestamp=None, date='today', tstamp=None,
-                 data_type='EC', N_blank=10, verbose=True, sep=None,
-                 header_string=None):
+                 timestamp=None, date='today', tstamp=None, tz=None,
+                 data_type='EC', N_blank=10, sep=None,
+                 header_string=None, verbose=True):
     '''
     This method will organize data in the lines of text from a file useful for
     electropy into a dictionary as follows (plus a few more keys)
@@ -428,10 +478,13 @@ def text_to_data(file_lines, title='get_from_file',
                     datacollines = True
                     if verbose:
                         print('data col lines start on line ' + str(nl+1))
-                a = re.search(timestamp_match, line)
+                a = re.search(timestamp_match, l)
                 if timestamp is None and a is not None:
                     timestamp = a.group()
-                    tstamp = timestamp_to_unix_time(l) #the XAS data is saved with time.ctime()
+                    d = re.search(date_match, l)
+                    if d is not None:
+                        date = d.group()
+                    tstamp = timestamp_to_epoch_time(l, tz=tz) #the XAS data is saved with time.ctime()
                     if verbose:
                         print('timestamp \'' + timestamp + '\' found in line ' + str(nl)) 
                 header_string = header_string + line                
@@ -493,7 +546,8 @@ def text_to_data(file_lines, title='get_from_file',
     dataset['timestamp'] = timestamp
     dataset['date'] = date
     if tstamp is None:
-        tstamp = timestamp_to_unix_time(timestamp, date)
+        tstamp = timestamp_to_epoch_time(timestamp, date, tz=tz)
+    dataset['timezone'] = tz
     dataset['tstamp'] = tstamp 
     #UNIX epoch time, for proper synchronization!
     dataset['data_type'] = data_type
@@ -510,7 +564,7 @@ def text_to_data(file_lines, title='get_from_file',
 
 
 def load_from_file(full_path_name='current', title='file', timestamp=None,
-                 data_type='EC', N_blank=10, verbose=True):
+                 data_type='EC', N_blank=10, tz=None, verbose=True):
     '''
     This method will organize the data in a file useful for
     electropy into a dictionary as follows (plus a few more keys)
@@ -528,7 +582,8 @@ def load_from_file(full_path_name='current', title='file', timestamp=None,
         folder, title = os.path.split(full_path_name)
     file_lines = import_text(full_path_name, verbose)
     dataset = text_to_data(file_lines=file_lines, title=title, data_type=data_type, 
-                           timestamp=timestamp, N_blank=N_blank, verbose=verbose)
+                           timestamp=timestamp, N_blank=N_blank, tz=tz,
+                           verbose=verbose)
     if dataset['timestamp'] is None:
         dataset['timestamp'] = timestamp_from_file(full_path_name, verbose=verbose)
     numerize(dataset)
@@ -539,7 +594,7 @@ def load_from_file(full_path_name='current', title='file', timestamp=None,
     
     
 def load_EC_set(directory, EC_file=None, tag='01', 
-                  verbose=True): 
+                  verbose=True, tz=None): 
     if verbose:
         print('\n\nfunction load_EC_set at your service!\n')
     from .combining import synchronize, sort_time
@@ -550,8 +605,8 @@ def load_EC_set(directory, EC_file=None, tag='01',
         EC_file = [f for f in lslist if f[:2] == tag and f[-4:] == '.mpt']
     elif type(EC_file) is str:
         EC_file = [EC_file]
-    EC_datas = [load_from_file(directory + os.sep + f, data_type='EC', verbose=verbose) for f in EC_file]
-    EC_data = synchronize(EC_datas, verbose=verbose)
+    EC_datas = [load_from_file(directory + os.sep + f, data_type='EC', tz=tz, verbose=verbose) for f in EC_file]
+    EC_data = synchronize(EC_datas, verbose=verbose, append=True, t_zero='first', tz=tz)
     if 'loop number' in EC_data['data_cols']:
         sort_time(EC_data, verbose=verbose) #note, sort_time no longer returns!
         

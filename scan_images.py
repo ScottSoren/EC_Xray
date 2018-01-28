@@ -63,8 +63,8 @@ def peak_colors(peak_list, colors=['k', 'b', 'r', 'g', 'c', 'm']):
 class ScanImages:
     def __init__(self, csvfile=None, directory=None, pilatusfilebase='default', 
                  tag=None, scan_type='time', calibration=calibration_0, 
-                 macro=None, tth=None, alpha=None, timestamp='abstimecol', 
-                 pixelmax=None, timecol=None, abstimecol='pd16', 
+                 macro=None, tth=None, alpha=None, timestamp=None, 
+                 pixelmax=None, timecol=None, abstimecol=None, 
                  verbose=True, vverbose=False):
         '''
         give EITHER a csvfile name with full path, or a directory and a tag.
@@ -95,11 +95,12 @@ class ScanImages:
         
         csvfilepath = directory + os.sep + csvname
         #self.csv_data = load_from_csv(csvfilepath, timestamp=timestamp)
+        name = csvname[:-4] # to drop the .csv
+        print('Loading Scan: directory = ' + directory + ',\n\tname = ' + name)
+        
         self.csv_data = load_from_file(csvfilepath, data_type='SPEC', timestamp=timestamp)
         
         # --------------  install easy metadata ------------- #
-        name = csvname[:-4] # to drop the .csv
-        print('Loading Scan: directory = ' + directory + ',\n\tname = ' + name)
         self.directory = directory
         self.name = name
         self.timecol = timecol
@@ -160,7 +161,13 @@ class ScanImages:
         elif timestamp in ['abstimecol']:
             try:
                 value = self.csv_data[abstimecol][0]
-                a = re.search(timestamp_matcher, value)
+                try:
+                    a = re.search(timestamp_matcher, value)
+                except TypeError:
+                    print('ERROR: You\'re trying to get the timestamp from an absolute' +
+                          ' time column.\n Inputs:\ttimestamp=\'abstimecol\',\tabstimecol=\'' + 
+                          str(abstimecol) + '\'\n but self.csv_data[abstimecol] = ' + str(value) + '.')
+                    raise
                 timestamp = a.group()
                 print('line 163: timestamp = ' + timestamp)
                 if timecol is not None:
@@ -169,7 +176,7 @@ class ScanImages:
             except OSError: # a dummy error... I want to actually get the error messages at first
                 pass
         self.timestamp = timestamp
-        print('line 170: self.timestamp = ' + self.timestamp)
+        print('line 170: self.timestamp = ' + str(self.timestamp))
         
 
         # ------------------------- organize csvdata and metadata ---------- #        
@@ -198,7 +205,7 @@ class ScanImages:
                     return
                 if 't' not in self.data['data_cols']:
                     self.data['data_cols'] += ['t']
-            print('line 200: self.timestamp = ' + self.timestamp + 
+            print('line 200: self.timestamp = ' + str(self.timestamp) + 
                   ',\tlen(self) = ' + str(len(self)) + 
                   ',\tlen(self.data[\'t\'])) = ' + str(len(self.data['t']))) 
             for i in range(len(self)):               
@@ -230,7 +237,7 @@ class ScanImages:
     def get_timecol_from_abstimecol(self):
         abstime = self.csv_data[self.abstimecol]
         t = []
-        print('line 228: self.timestamp = ' + self.timestamp)
+        print('line 228: self.timestamp = ' + str(self.timestamp))
         t0 = timestamp_to_seconds(self.timestamp)
         for time in abstime:
             value = re.search(timestamp_matcher, time).group()
@@ -417,7 +424,7 @@ class ScanImages:
             x_str = 'center tth / deg'
             
         # we want the scan axis to vary linearly, but the input might not.
-        f = interp1d(x_i, spectra_raw, axis=0) 
+        f = interp1d(x_i, spectra_raw, axis=0, fill_value='extrapolate') 
         if tspan == 'all':
             x = np.linspace(x_i[0], x_i[-1], num=N_x)
         else:
@@ -503,9 +510,12 @@ class ScanImages:
                    slits=True, xslits=None, yslits=[60, 430]):
         '''
         '''
-        if self.scan_type in ['t', 'tth']:
+        if self.scan_type in ['tth']:  #should be changed!
             t_total = self.csv_data['TwoTheta'][-1]
             t_vec = self.csv_data['TwoTheta']
+        elif self.scan_type in ['t']:
+            t_total = self.data['t'][-1]
+            t_vec = self.data['t']            
         else:
             t_total = len(self)
             t_vec = np.arange(t_total)

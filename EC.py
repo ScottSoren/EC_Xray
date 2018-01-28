@@ -33,7 +33,7 @@ import os
 # these functions need to be avoided or implemented in EC_Xray. 
 # EC_Xray should not require EC_MS to run.
 from .combining import timestamp_to_seconds, is_time    
-from .combining import cut_dataset, is_EC_data, get_time_col
+from .combining import cut_dataset, is_EC_data, get_timecol
 
 def select_cycles(EC_data_0, cycles=1, t_zero=None, verbose=True, 
                   cycle_str=None, cutMS=True, data_type='CV', override=False):
@@ -94,7 +94,7 @@ def select_cycles(EC_data_0, cycles=1, t_zero=None, verbose=True,
             #print(col)
             time_masks = {}  #gotta use the time cols to cut everything else, so they get cut last
             if not is_EC_data(col): #then we've got a QMS or synchrotron variable
-                time_col = get_time_col(col)
+                time_col = get_timecol(col)
                 if time_col in time_masks:
                     mask = time_masks[time_col]
                 else:

@@ -17,8 +17,11 @@ import re
 import os #, sys    
 import numpy as np
 
-def synchronize(data_objects, t_zero='start', append=None, cutit=False, 
-                override=None, update=True, file_number_type='EC',
+
+
+
+def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC',
+                cutit=False, override=None, update=True, tz=None,
                 verbose=True, ):
     '''
     'synchronize' is the most important function of electropy/ECpy/EC_MS/EC_Xray
@@ -61,6 +64,8 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
     By default, override gets set to True if append is True. 
         update: True if you want object.data to be replaced with the synchronized
     dataset for any non-dictionary objects in data_objects
+        tz: timezone for genrating timestamp, as pytz.timezone() instance or string 
+    to be read by pytz.timezone(). Local timezone assumed by default.
         verbose: True if you want the function to talk to you. Recommended, as it
     helps catch your mistakes and my bugs. False if you want a clean terminal or stdout
     
@@ -76,7 +81,7 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
     if verbose:
         print('\n\nfunction \'synchronize\' at your service!') 
         
-    from .import_data import timestamp_to_unix_time, unix_time_to_timestamp
+    from .import_data import timestamp_to_epoch_time, epoch_time_to_timestamp
     
     if type(data_objects) is not list:
         print('''The first argument to synchronize should be a list of datasets! 
@@ -137,13 +142,27 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
             continue     #any dataset making it to the next line is not empty, i.e. has data.
         hasdata[nd] = True    
         if len(title_combined) > 0:
-            title_combined += '__and___'
-        title_combined += dataset['title'] + '__as_' + str(nd)
+            title_combined += ', '
+            if nd == len(datasets) - 1:
+                title_combined += 'and '
+        title_combined += '(' + dataset['title'] + ') as ' + str(nd)
         if verbose:
             print('working on ' + dataset['title'])
-            print('timestamp is ' + dataset['timestamp'])
-            
-        t_0 = dataset['tstamp'] # UNIX epoch time !!! The t=0 for the present dataset
+        
+        try:
+            t_0 = dataset['tstamp'] # UNIX epoch time !!! The t=0 for the present dataset
+        except KeyError:
+            print('No tstamp in dataset. Trying to read it from date and timestamp.')
+            date = None
+            timestamp = None
+            if 'date' in dataset:
+                date = dataset['date']
+            if 'timestamp' in dataset:
+                timestamp = dataset['timestamp']
+            t_0 = timestamp_to_epoch_time(timestamp, date, tz=tz)
+
+        if verbose:
+                print('\ttstamp is ' + str(t_0) + ' seconds since Epoch')
 
         t_s = now           # will decrease to the earliest start of time data in the dataset        
         t_f = 0             # will increase to the latest finish of time data in the dataset
@@ -206,7 +225,7 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
     combined_data['tspan_2'] = combined_data['tspan'] #old code calls this tspan_2.
 
     combined_data['tstamp'] = t_zero
-    combined_data['timestamp'] = unix_time_to_timestamp(t_zero) #we want that timestamp refers to t=0
+    combined_data['timestamp'] = epoch_time_to_timestamp(t_zero, tz=tz) #we want that timestamp refers to t=0
     
     combined_data['first'] = t_first - t_zero
     combined_data['last'] = t_last - t_zero
@@ -235,7 +254,10 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
         file_number_type in {d['data_type'] for d in datasets}): 
         combined_data['file number'] = [] 
         fn_timecol = get_timecol(data_type=file_number_type)
-
+        
+#   combined_data_keys_0 = list(combined_data.keys()) 
+# originally used to avoid overwriting metadata at end of second loop
+    
     # ... And loop again to synchronize the data and put it into the combined dictionary.
     if verbose:
         print('---------- syncrhonize entering second loop -----------')
@@ -244,16 +266,16 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
         nd = dataset['combining_number']
         # ^ note, nd is the number of the dataset from the first loop, and is 
         #not scrambled by the sorting of the datasets according to recstart done above.
+        if verbose:
+            print('working on dataset ' + dataset['title'] + 
+                  ', which has combining number = ' + str(nd))
+            #print('cols in ' + dataset['title'] + ':\n' + str(dataset['data_cols']))
+            #print('cols in combined_data:\n' + str(combined_data['data_cols']))
         if not hasdata[nd]: 
             if verbose:
                 print('skipping this dataset, because its combining number, ' + 
                       str(nd) + ', is in the empty files list')
             continue
-        
-        if verbose:
-            print('proceding with this dataset, with combining number ' + str(nd))
-            #print('cols in ' + dataset['title'] + ':\n' + str(dataset['data_cols']))
-            #print('cols in combined_data:\n' + str(combined_data['data_cols']))
             
         # the synchronization is based on the offset of the individual dataset
         # with respect to t_zero, both in unix time.
@@ -293,7 +315,7 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
                         if verbose:  
                             print('prepared to append data according to timecol ' + col)
             # now, fill in file number according to datasets of type file_number_type            
-            if dataset['data type'] == file_number_type: 
+            if dataset['data_type'] == file_number_type: 
                 fn = np.array([i] * collength[fn_timecol])             
                 combined_data['file number'] = np.append(combined_data['file number'], fn) 
                 if verbose:    
@@ -314,16 +336,20 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
                 # get data from old column for appending
                 if col in combined_data:
                     olddata = combined_data[col]    
+                else:
+                    olddata = np.array([])
                 #but first...
                 # proccessing: ensure elignment with timecol for appended data
                 l1 = len(data) + len(olddata)
+                #print('col = ' + col)
                 timecol = get_timecol(col)
+                #print('timecol = ' + timecol)
                 l0 = oldcollength[timecol] + collength[timecol] 
                 # ^ I had to get these lengths before because I'm not sure whether 
                 #timecol will have been processed first or not...
                 if l0 > l1: #this is the case if the previous dataset was missing col but not timecol
                     filler = np.array([0] * (l0 - l1))
-                    olddata = data.append(olddata, filler) 
+                    olddata = np.append(olddata, filler) 
                     # ^ and now len(olddata) = len(combined_data[timecol])
                 # APPEND!
                 data = np.append(olddata, data)
@@ -340,13 +366,19 @@ def synchronize(data_objects, t_zero='start', append=None, cutit=False,
                 combined_data['data_cols'].append(col)  
          
         
-        #keep all of the metadata from the original datasets
+        #keep the metadata from the original datasets
         for col, value in dataset.items():
-            if col not in dataset['data_cols'] and col not in ['combining_number', 'data_cols']:
-                if col in combined_data.keys():
-                    combined_data[col + '_' + str(nd)] = value
-                else:
-                    combined_data[col] = value
+            if col in combined_data['data_cols']:
+                continue # Otherwise I duplicate all the data.
+            col = '_' + col # new name so that I don't overwrite essential combined metadata like tstamp
+            if col in combined_data.keys():
+                #print(col)
+                combined_data[col][nd] = value
+            else:
+                # I expect to arrive here only once, so good place for output
+                if verbose:
+                    print('metadata from original files stored as ' + col)
+                combined_data[col] = {nd: value}
                     
     # And now we're out of the loop!               
     #There's still a problem if the last dataset is missing columns! Fixing that here. 
@@ -483,7 +515,9 @@ def is_EC_data(col):
                'Ns changes', 'counter inc.', 'cycle number', 'Ns', '(Q-Qo)/mA.h', 
                'dQ/C', 'Q charge/discharge/mA.h', 'half cycle', 'Capacitance charge/µF', 
                'Capacitance discharge/µF', 'dq/mA.h', 'Q discharge/mA.h', 'Q charge/mA.h', 
-               'Capacity/mA.h', 'file number', 'file_number', 
+               'Capacity/mA.h', 'file number', 'file_number', 'Ece/V', 
+               'Ewe-Ece/V', '<Ece>/V', 'Energy charge/W.h', 'Energy discharge/W.h',
+               'Efficiency/%',
                'U vs RHE / [V]', 'J /[mA/cm^2]', 'J / [mA/cm^2]']:
     #this list should be extended as needed
         return True
@@ -504,7 +538,7 @@ def get_type(col):
     return 'Xray' # to be refined later...
 
 def get_timecol(col=None, data_type=None, verbose=False):
-    if data_type is not None:
+    if data_type is None:
         data_type = get_type(col)
     if data_type == 'EC':
         timecol = 'time/s'
@@ -546,59 +580,65 @@ def seconds_to_timestamp(seconds):
 
 def dayshift(dataset, days=1):
     ''' Can work for up to 4 days. After that, hh becomes hhh... 
+    This function should find little use now that 
     '''
     dataset['timestamp'] = seconds_to_timestamp(timestamp_to_seconds(dataset['timestamp']) + days*24*60*60) 
     return dataset
 
-def sort_time(dataset, data_type='EC', verbose=False):
+
+
+def sort_time(dataset, data_type='EC', verbose=False, vverbose=False):
     #17K11: This now operates on the original dictionary, so
     #that I don't need to read the return.
-        if verbose:
-            print('\nfunction \'sort_time\' at your service!\n\n')
-        
-        if 'NOTES' in dataset.keys():
-            dataset['NOTES'] += '\nTime-Sorted\n'
-        else: 
-            dataset['NOTES'] = 'Time-Sorted\n'
-        
-        if data_type == 'all':
-            data_type = ['EC','MS']
-        elif type(data_type) is str:
-            data_type = [data_type]
+    if verbose:
+        print('\nfunction \'sort_time\' at your service!\n\n')
+    
+    if 'NOTES' in dataset.keys():
+        dataset['NOTES'] += '\nTime-Sorted\n'
+    else: 
+        dataset['NOTES'] = 'Time-Sorted\n'
+    
+    if data_type == 'all':
+        data_type = ['EC','MS']
+    elif type(data_type) is str:
+        data_type = [data_type]
 
-        sort_indeces = {} #will store sort indeces of the time variables
-        data_cols = dataset['data_cols'].copy()
-        dataset['data_cols'] = []
-        for col in data_cols:
-            if verbose:
-                print('working on ' + col)
-            data = dataset[col] #do I need the copy?
-            if get_type(col) in data_type: #retuns 'EC' or 'MS', else I don't know what it is.
-                time_col = get_timecol(col, verbose)
-                if time_col in sort_indeces.keys():
-                    indeces = sort_indeces[time_col]
-                else:
-                    print('getting indeces to sort ' + time_col)
-                    indeces = np.argsort(dataset[time_col])
-                    sort_indeces[time_col] = indeces
-                if len(data) != len(indeces):
-                    if verbose:
-                        print(col + ' is not the same length as its time variable!\n' +
-                              col + ' will not be included in the time-sorted dataset.')
-                else:
-                    dataset[col] = data[indeces]
-                    dataset['data_cols'] += [col]
-                    print('sorted ' + col + '!')
-            else: #just keep it without sorting.
+    sort_indeces = {} #will store sort indeces of the time variables
+    data_cols = dataset['data_cols'].copy()
+    dataset['data_cols'] = []
+    for col in data_cols:
+        if vverbose:
+            print('working on ' + col)
+        data = dataset[col] #do I need the copy?
+        if get_type(col) in data_type: #retuns 'EC' or 'MS', else I don't know what it is.
+            timecol = get_timecol(col, verbose=vverbose)
+            if timecol in sort_indeces.keys():
+                indeces = sort_indeces[timecol]
+            else:
+                if verbose:
+                    print('getting indeces to sort ' + timecol)
+                indeces = np.argsort(dataset[timecol])
+                sort_indeces[timecol] = indeces
+            if len(data) != len(indeces):
+                if verbose:
+                    print(col + ' is not the same length as its time variable!\n' +
+                          col + ' will not be included in the time-sorted dataset.')
+            else:
+                dataset[col] = data[indeces]
                 dataset['data_cols'] += [col]
-                dataset[col] = data
-                
+                if verbose:
+                    print('sorted ' + col + '!')
+        else: #just keep it without sorting.
+            dataset['data_cols'] += [col]
+            dataset[col] = data
+            
 
-        if verbose:
-            print('\nfunction \'sort_time\' finished!\n\n')    
-        
-        #return dataset#, sort_indeces  #sort indeces are useless, 17J11
+    if verbose:
+        print('\nfunction \'sort_time\' finished!\n\n')    
+    
+    #return dataset#, sort_indeces  #sort indeces are useless, 17J11
     #if I need to read the return for normal use, then I don't want sort_indeces
+    return dataset
     
     
     
