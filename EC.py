@@ -35,6 +35,19 @@ import os
 from .combining import timestamp_to_seconds, is_time    
 from .combining import cut_dataset, is_EC_data, get_timecol
 
+
+V_str_0 = 'U vs RHE / [V]' #changed from E to U 17E21
+J_str_0 = 'J / [mA/cm^2]'
+EC_cols_0 = ['mode', 'ox/red', 'error', 'control changes', 'time/s', 'control/V', 
+           'Ewe/V', '<I>/mA', '(Q-Qo)/C', 'P/W', 'loop number', 'I/mA', 'control/mA',
+           'Ns changes', 'counter inc.', 'cycle number', 'Ns', '(Q-Qo)/mA.h', 
+           'dQ/C', 'Q charge/discharge/mA.h', 'half cycle', 'Capacitance charge/µF', 
+           'Capacitance discharge/µF', 'dq/mA.h', 'Q discharge/mA.h', 'Q charge/mA.h', 
+           'Capacity/mA.h', 'file number', 'file_number', 'Ece/V', 
+           'Ewe-Ece/V', '<Ece>/V', 'Energy charge/W.h', 'Energy discharge/W.h',
+           'Efficiency/%', 'Rcmp/Ohm',
+           V_str_0, J_str_0]
+
 def select_cycles(EC_data_0, cycles=1, t_zero=None, verbose=True, 
                   cycle_str=None, cutMS=True, data_type='CV', override=False):
     ''' 
@@ -448,7 +461,7 @@ def sync_metadata(EC_data, RE_vs_RHE=None, A_el=None, verbose=True):
         if RE_vs_RHE is None:
             V_str = E_str
         elif E_str is not None:
-            V_str = 'U vs RHE / [V]' #changed from E to U 17E21
+            V_str = V_str_0
             EC_data[V_str] = EC_data[E_str] + RE_vs_RHE
     
     if A_el is not None:
@@ -470,7 +483,7 @@ def sync_metadata(EC_data, RE_vs_RHE=None, A_el=None, verbose=True):
         if A_el is None:
             J_str = I_str
         elif I_str is not None:
-            J_str = 'J /[mA/cm^2]'
+            J_str = J_str_0
             EC_data[J_str] = EC_data[I_str] / A_el
 
     EC_data['E_str'] = E_str 

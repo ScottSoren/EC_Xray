@@ -17,11 +17,12 @@ import os
 #from mpl_toolkits.axes_grid1 import make_axes_locatable
 
     
-from .EC import sync_metadata, select_cycles
+
+standard_colors = {'XAS':'b','XAS1':'r','XAS2':'g'}
 
 
 def plot_vs_potential(scan, 
-                      peaks='existing',
+                      peaks=None,
                       tspan=0, RE_vs_RHE=None, A_el=None, cycles='all',
                       ax1='new', ax2='new', ax=None, #spec='k-',
                       overlay=0, logplot = [1,0], leg=False,
@@ -37,6 +38,8 @@ def plot_vs_potential(scan,
     '''
     if verbose:
         print('\n\nfunction \'plot_vs_potential\' at your service!\n')
+    from .EC import sync_metadata, select_cycles
+    
     if type(logplot) is not list:
         logplot = [logplot, False]
     if removebackground is None:
@@ -113,21 +116,27 @@ def plot_vs_potential(scan,
             if scanobject:
                 peaks = scan.peaks
             else:
-                print('need a scan object to read existing peaks!')          
-        colors = dict([(name, color) for (name, (interval, color)) in peaks.items()])
+                print('need a scan object to read existing peaks!')   
+        elif peaks is None:
+            peaks = {}
+        try:
+            colors = dict([(name, color) for (name, (interval, color)) in peaks.items()])
+        except ValueError:
+            colors = peaks
     
         for (key, color) in colors.items():
             x = data['t']
-            y = data['key']
+            y = data[key]
             try:
                 Y = np.interp(t, x, y)  #obs! np.interp has a has a different argument order than Matlab's interp1
-            except ValueError:
+            except ValueError as e:
                 print('can\'t interpolate onto time for plotting vs potential!')
                 print('x ' + str(x) + '\ny ' + str(y) + '\nt ' + str(t))
+                print(e)
             xray_spec = spec.copy()
             if 'color' not in xray_spec.keys():
                 xray_spec['color'] = color
-            ax1.plot(V[mask_plot], Y[mask_plot], label=key **xray_spec)
+            ax1.plot(V[mask_plot], Y[mask_plot], label=key, **xray_spec)
         
         ax1.xaxis.tick_top()
         ax1.set_ylabel('counts / [a.u.]')
@@ -137,8 +146,9 @@ def plot_vs_potential(scan,
     if verbose:
         print('\nfunction \'plot_vs_potential\' finished!\n\n')
     
-    for ax in [ax1, ax2]:    
-        ax.tick_params(axis='both', direction='in') #17K28  
+    for ax in [ax1, ax2]: 
+        if ax is not None:
+            ax.tick_params(axis='both', direction='in') #17K28  
         
         #parameter order of np.interp is different than Matlab's interp1
     return [ax1, ax2]    
@@ -168,22 +178,82 @@ def smooth_data(data_0, points=3, cols=None, verbose=True):
     return data    
 
 
+
+def plot_simple(data, peaks={'XAS':'b'},
+                tspan=None, ax='new', unit='a.u.',
+                logplot=True, saveit=False, leg=False, 
+                override=False, verbose=True):
+    '''
+    plots selected masses for a selected time range from MS data or EC_MS data
+    Could probably be simplified a lot, to be the same length as plot_fluxes
+    '''
+    if verbose:
+        print('\n\nfunction \'plot_simple\' at your service! \n Plotting from: ' + 
+              data['title'])
+
+    from .combining import get_timecol
+    if tspan is None:
+        tspan = data['tspan']
+    if ax == 'new':
+        fig1 = plt.figure()
+        ax = fig1.add_subplot(111)    
+    lines = {}
+    #note, tspan is processed in get_signal, and not here!
+    if type(lines) is str:
+        lines = [lines]
+    if type(lines) is list:
+        c = lines
+        lines = {}
+        for m in c:
+            color = standard_colors[m]
+            peaks[m] = color
+
+    for peak, color in peaks.items():
+        if verbose:
+            print('plotting: ' + peak)
+        try:
+            timecol = get_timecol(peak)
+            x = data[timecol]
+            y = data[peak]
+            mask = np.logical_and(tspan[0]<x, x<tspan[-1])
+            x = x[mask]
+            y = y[mask]
+        except KeyError:
+            print('Can\'t get signal for ' + str(peak))
+            continue
+        lines[peak] = ax.plot(x, y, color, label = peak) 
+        #as it is, lines is not actually used for anything         
+    if leg:
+        if type(leg) is not str:
+            leg = 'lower right'
+        ax.legend(loc=leg)
+    ax.set_xlabel('time / [s]')
+    ax.set_ylabel('signal / [' + unit + ']')           
+    if logplot: 
+        ax.set_yscale('log') 
+    ax.tick_params(axis='both', direction='in') #17K28  
+    if verbose:
+        print('function \'plot_simple\' finsihed! \n\n')
+    return ax
+
+
     
 def plot_experiment(scan,
-                    plot_type='heat', peaks='existing',
+                    plot_type='timescan', peaks='existing',
                     tspan=None, overlay=False, logplot=[True,False], verbose=True,   
                     plotpotential=True, plotcurrent=True, ax='new',
                     RE_vs_RHE=None, A_el=None, removebackground=True,
                     saveit=False, title=None, leg=False,
                     V_color='k', J_color='r', V_label=None, J_label=None,
-                    fig=None, t_str=None, J_str=None, V_str=None,
+                    fig=None, t_str=None, J_str=None, V_str=None, bg=None,
                     ): 
     '''
     this plots signals or fluxes on one axis and current and potential on other axesaxis
     '''
-    
     if verbose:
-        print('\n\nfunction \'plot_experiment\' at your service!\n Plotting from: ' + scan.name)
+        print('\n\nfunction \'plot_experiment\' at your service!\n')
+    from .EC import sync_metadata
+    
     if ax == 'new':
         if fig is None:
             figure1 = plt.figure()
@@ -211,8 +281,8 @@ def plot_experiment(scan,
         object_file = True
     
     
-    if tspan is None:                  #then use the whole range of overlap                            
-            tspan = data['tspan'] #changed from 'tspan_2' 17H09
+    if tspan is None:                  #then use the range of overlap                            
+        tspan = data['tspan'] 
     if type(tspan) is str and not tspan=='all':
         tspan = data[tspan]
     if type(logplot) is not list:
@@ -232,7 +302,10 @@ def plot_experiment(scan,
     
     if object_file:
         if plot_type == 'heat':
-            scan.heat_plot(ax=ax[0], tspan=tspan)
+            scan.heat_plot(ax=ax[0], tspan=tspan, bg=bg)
+    elif plot_type == 'timescan':
+        plot_simple(data, ax=ax[0], peaks=peaks, tspan=tspan, logplot=logplot[0])
+    
             
     ax[0].set_xlim(tspan)
     ax[0].xaxis.tick_top()

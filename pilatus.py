@@ -63,7 +63,8 @@ def read_calibration(file):
 class Pilatus:
     def __init__(self, file, shape=shape_0, 
                  calibration=None, alpha=None, tth=None,
-                 xslits=None,  slits=False, yslits=[60, 430], pixelmax=None, verbose=True):
+                 slits=True, xslits=None, yslits=[60, 430], pixelmax=None, 
+                 verbose=True):
         if verbose:
             print('loading Pilatus object for ' + file)
         directory, name = os.path.split(file)
@@ -94,7 +95,7 @@ class Pilatus:
         else:
             self.dx = 1e-3
             self.dy = 1e-3
-        self.db_pixel = (0,0)
+            self.db_pixel = (0,0)
         
         self.slits = slits 
         self.alpha = alpha  # sample angle wrt direct beam / deg
@@ -345,15 +346,15 @@ class Pilatus:
             pixel_counts = self.im[inbin][:]
             if method == 'sum':
                 counts = sum(pixel_counts)
-            if method == 'average':
-                if len(pixel_counts)<min_pixels:
-                    continue
+            if method == 'average' and len(pixel_counts)<min_pixels:
+                continue
+            elif method == 'average':
                 counts = np.mean(pixel_counts)
             bins[step] = counts
             tth_vec += [(step + 1/2) * stepsize]
             counts_vec += [counts]
         
-        spectrum = (np.array(tth_vec), np.array(counts_vec))
+        spectrum = np.array([tth_vec, counts_vec])
         self.bins = bins
         self.spectrum = spectrum
 

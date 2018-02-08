@@ -138,7 +138,8 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
         if 'data_cols' not in dataset or len(dataset['data_cols']) == 0:
             print(dataset['title'] + ' is empty')
             hasdata[nd] = False
-            recstarts += [now] # don't want dataset list to be shortened when sorted later according to recstarts!
+            recstarts += [now] # don't want dataset list to be shortened 
+            #when sorted later according to recstarts!
             continue     #any dataset making it to the next line is not empty, i.e. has data.
         hasdata[nd] = True    
         if len(title_combined) > 0:
@@ -170,8 +171,10 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
         for col in dataset['data_cols']:
             if is_time(col):
                 try:
-                    t_s = min(t_s, t_0 + dataset[col][0])   #earliest start of time data in dataset in epoch time
-                    t_f = max(t_f, t_0 + dataset[col][-1])  #latest finish of time data in dataset in epoch time
+                    t_s = min(t_s, t_0 + dataset[col][0])   
+                    # ^ earliest start of time data in dataset in epoch time
+                    t_f = max(t_f, t_0 + dataset[col][-1])  
+                    # ^ latest finish of time data in dataset in epoch time
                 except IndexError:  #if dataset['data_cols'] points to nonexisting data, something went wrong.
                     print(dataset['title'] + ' may be an empty file.')
                     hasdata[nd] = False # files that are empty after the header are caught here
@@ -221,11 +224,13 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
     # ^ overlap start and finish times as unix epoch times
     combined_data['tspan_1'] = [t_start - t_first, t_finish - t_first]    
     # ^ overlap start and finish times as seconds since earliest start 
-    combined_data['tspan'] = [t_start - t_zero, t_finish - t_zero]    #start and finish times of overlap as seconds since t=0  
+    combined_data['tspan'] = [t_start - t_zero, t_finish - t_zero]    
+    # ^ start and finish times of overlap as seconds since t=0  
     combined_data['tspan_2'] = combined_data['tspan'] #old code calls this tspan_2.
 
     combined_data['tstamp'] = t_zero
-    combined_data['timestamp'] = epoch_time_to_timestamp(t_zero, tz=tz) #we want that timestamp refers to t=0
+    combined_data['timestamp'] = epoch_time_to_timestamp(t_zero, tz=tz) 
+    # ^ we want that timestamp refers to t=0
     
     combined_data['first'] = t_first - t_zero
     combined_data['last'] = t_last - t_zero
@@ -238,7 +243,8 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
         print('First loop indicates that no files have data!!! ' + 
               'synchronize will return an empty dataset!!!')
     elif N_notempty == 1:
-        print('First loop indicates that only one dataset has data! Synchronize will just return that dataset!')
+        print('First loop indicates that only one dataset has data! ' + 
+              'Synchronize will just return that dataset!')
         combined_data = next(datasets[nd] for nd, v in hasdata.items() if v==1)
         print('\nfunction \'synchronize\' finished!\n\n')
         return combined_data
@@ -255,8 +261,8 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
         combined_data['file number'] = [] 
         fn_timecol = get_timecol(data_type=file_number_type)
         
-#   combined_data_keys_0 = list(combined_data.keys()) 
-# originally used to avoid overwriting metadata at end of second loop
+    combined_data_keys_0 = list(combined_data.keys()) 
+# used to avoid overwriting metadata at end of second loop
     
     # ... And loop again to synchronize the data and put it into the combined dictionary.
     if verbose:
@@ -327,6 +333,7 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
             data = dataset[col]
             # processing: cutting
             if cutit:           #cut data to only return where it overlaps
+                #print('cutting ' + col) # for debugging
                 data = data[masks[get_timecol(col)]]  
             # processing: offsetting 
             if is_time(col):
@@ -341,9 +348,9 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
                 #but first...
                 # proccessing: ensure elignment with timecol for appended data
                 l1 = len(data) + len(olddata)
-                #print('col = ' + col)
+                #print('col = ' + col) #debugging
                 timecol = get_timecol(col)
-                #print('timecol = ' + timecol)
+                #print('timecol = ' + timecol) #debugging
                 l0 = oldcollength[timecol] + collength[timecol] 
                 # ^ I had to get these lengths before because I'm not sure whether 
                 #timecol will have been processed first or not...
@@ -370,18 +377,39 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
         for col, value in dataset.items():
             if col in combined_data['data_cols']:
                 continue # Otherwise I duplicate all the data.
-            col = '_' + col # new name so that I don't overwrite essential combined metadata like tstamp
-            if col in combined_data.keys():
+            if col[0] == '_': #let's keep it to one level of '_', and nest dictionaries
                 #print(col)
-                combined_data[col][nd] = value
+                if col in combined_data: 
+                    if nd in combined_data[col] and verbose:
+                        print('overwriting ' + col + '[' + str(nd) + '] with nested metadata.')
+                    combined_data[col][nd] = value
+                else:
+                    combined_data[col] = {nd:value}
+                    if verbose:
+                        print('nesting metadata for ' + col + ', nd = ' + str(nd))
+                continue
+            if col not in combined_data_keys_0: # avoid ovewriting essentials
+                combined_data[col] = value # this will store that from the
+                                           #latest dataset as top-level
+            col = '_' + col  # new name so that I don't overwrite
+                #essential combined metadata like tstamp
+            if col in combined_data:
+                #print(col) #debugging
+                if nd in combined_data[col]:
+                    if verbose:
+                        print(col + '[' + str(nd) + '] has nested metadata, skipping unnested.')
+                else:        
+                    combined_data[col][nd] = value
             else:
                 # I expect to arrive here only once, so good place for output
                 if verbose:
                     print('metadata from original files stored as ' + col)
                 combined_data[col] = {nd: value}
-                    
-    # And now we're out of the loop!               
-    #There's still a problem if the last dataset is missing columns! Fixing that here. 
+
+    # ----- And now we're out of the loop! --------               
+    
+    # There's still a column length problem if the last dataset is missing 
+    #columns! Fixing that here. 
     for col in combined_data['data_cols']:
         l1 = len(combined_data[col])
         timecol = get_timecol(col)
@@ -389,7 +417,6 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
         if l0 > l1:
             filler = np.array([0] * (l0 - l1))
             combined_data[col] = np.append(combined_data[col], filler)
-
     
     # add 'file number' to data_cols
     if 'file number' in combined_data.keys() and 'file number' not in combined_data['data_cols']:    
@@ -510,15 +537,8 @@ def is_MS_data(col):
     return False
 
 def is_EC_data(col):
-    if col in ['mode', 'ox/red', 'error', 'control changes', 'time/s', 'control/V', 
-               'Ewe/V', '<I>/mA', '(Q-Qo)/C', 'P/W', 'loop number', 'I/mA', 'control/mA',
-               'Ns changes', 'counter inc.', 'cycle number', 'Ns', '(Q-Qo)/mA.h', 
-               'dQ/C', 'Q charge/discharge/mA.h', 'half cycle', 'Capacitance charge/µF', 
-               'Capacitance discharge/µF', 'dq/mA.h', 'Q discharge/mA.h', 'Q charge/mA.h', 
-               'Capacity/mA.h', 'file number', 'file_number', 'Ece/V', 
-               'Ewe-Ece/V', '<Ece>/V', 'Energy charge/W.h', 'Energy discharge/W.h',
-               'Efficiency/%',
-               'U vs RHE / [V]', 'J /[mA/cm^2]', 'J / [mA/cm^2]']:
+    from .EC import EC_cols_0
+    if col in EC_cols_0:
     #this list should be extended as needed
         return True
     return False
@@ -640,5 +660,126 @@ def sort_time(dataset, data_type='EC', verbose=False, vverbose=False):
     #if I need to read the return for normal use, then I don't want sort_indeces
     return dataset
     
+
+
+
+def time_cal(data, ref_data=None, points=[(0,0)], point_type=['time', 'time'], 
+              time='t', pseudotime=None, reftime='time/s', verbose=True):
+    '''
+    Calibrates the time column of a dataset according to sync points with a 
+    reference dataset. tstamps are never changed.
+    ------- inputs ---------
+        data: the dataset for which to calibrate a timecolumn
+        ref_data: the reference dataset.
+        points: pairs of corresponding times or indeces in data and ref_data. 
+    If only one point is given, time is calibrated just by a linear shift. If
+    two or more are given, time is calibrated by the linear transformation best
+    fitting the the calibration points (exact for two). 
+        sync_type: Tuple specifying the mode of reference used in points, first
+    for data and then for ref_data. Options are 'time', in which case the reference
+    is to the actual value of the uncalibrated/reference time; and 'index' in 
+    which case it is to the datapoint number of uncalibrated/reference time vector.
+        time: the name of the column of data into which to save the calibrated time
+        pseudotime: the name of the column of data containing the uncalibrated time.
+    By default pseudotime is taken to be the same as time, i.e. the uncalibrated
+    time is overwritten by the calibrated time.
+        reftime: the name of the column of ref_data containing the reference time.
+        verbose: True if you want the function to talk to you, useful for catching
+    your mistakes and my bugs. False if you want a clean terminal or stdout.
+    ------- output --------
+        data: same as the input data, but with the calibrated time saved in the
+    specified column.
+    '''
+    if verbose:
+        print('\n\nfunction \'time_cal\' at your service!\n')
     
+    if type(points[0]) not in [list, tuple]:
+        points = [points]
+    if type(point_type) is str:
+        point_type = (point_type, point_type)
+    
+    t_vecs = np.zeros([2, len(points)]) # this is easiest if I pre-allocate an array
+    mask = np.array([True for point in points]) # to record if a poitn has problems
+    
+    
+    if ref_data in ['absolute', 'epoch', None]:
+        ref_data = {reftime:None, 'tstamp':0} 
+        #this is enough to keep the loop from crashing
+        print('time calbration referenced to absolute time! point_type[1] must be \'time\'.')
+    if 'tstamp' not in ref_data:
+        offset_0 = 0
+        print('No ref_data given or no ref_data[\'tstamp\']. ' + 
+              'Assuming reference times are relative to the same tstamp!')
+    else:
+        offset_0 = ref_data['tstamp'] - data['tstamp']
+        if verbose:
+            print('tstamp offset = ' + str(offset_0))
+        
+    for i, t in enumerate([data[pseudotime], ref_data[reftime]]):    
+        # this loop will go through twice. First for time from data, then
+        # for the reftime from refdata. sync_type is a vector of two corresponding
+        # to these two iterations, as is each point of points.
+        
+        #check the input
+        if not point_type[i] in ['time', 'index', 'timestamp']:
+            print('WARNING: Don\'t know what you mean, dude, when you say ' + 
+                  str(point_type[i]) + '. Options for point_type[' + str(i) +
+                  '] are \'index\', \'time\',  and \'timestamp\'.' +
+                  ' Gonna try and guess from the first point of points.')
+            if type(points[0][i]) is int:
+                point_type[i] = 'index'
+            elif type(points[0][i]) is float:
+                point_type[i] = 'time'
+            elif type(points[0][i]) is str:
+                point_type[i] = 'timestamp'
+
+        #get the times corresponding to the syncpoints into the array
+        for j, point in enumerate(points):
+            #print('point_type[' + str(i) + '] = ' + str(point_type[i])) #debugging
+            try:
+                if point_type[i] == 'index':
+                    t_vecs[i][j] = t[point[i]]
+                elif point_type[i] == 'time':
+                    t_vecs[i][j] = point[i]
+                elif point_type[i] == 'timestamp':
+                    t_vecs[i][j] = timestamp_to_seconds(point[i])
+            except (IndexError, TypeError) as e:
+                print(str(e) + ' at point ' + str(point) + ' of ' +str(i) + ' (0=data, 1=refdata)')
+                mask[j] = False
+    
+    N_good = len(mask[mask])
+    
+    if verbose:
+        print('Got ' + str(N_good) + ' out of ' + str(len(points)) + ' points!') 
+        # looks silly, but len(mask[mask]) easy way to get the number of True in mask
+    
+    
+    if N_good == 1:
+        offset = t_vecs[:, mask][1][0] - t_vecs[:, mask][0][0]
+        if verbose:
+            print('offset with respect to ref tstamp = ' + str(offset))
+            print('total offset = ' + str(offset + offset_0))
+        data[time] = data[pseudotime] + offset + offset_0
+    
+    else:
+        t, t_ref = t_vecs[:, mask]  # this drops any point that had a problem
+        #print(t_vecs)
+        pf = np.polyfit(t, t_ref, 1)
+        #print(pf)
+        if verbose:
+            print('with respect to ref tstamp:')
+            print('time = ' + str(pf[0]) + ' * pseudotime + ' + str(pf[1]))
+            print('with respect to tstamp:')
+            print('time = ' + str(pf[0]) + ' * pseudotime + ' + str(pf[1] + offset_0))
+        data[time] = pf[0] * data[pseudotime] + pf[1] + offset_0
+
+    if time not in data['data_cols']:
+        data['data_cols'] += [time] # otherwise synchronizing later can give error
+    
+    if verbose:
+        print('\nfunction \'time_cal\' finished!\n\n')
+    return data
+                  
+                  
+                  
     

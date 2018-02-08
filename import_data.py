@@ -178,22 +178,30 @@ def get_creation_timestamp(filepath):
     return hh + ':' + mm + ':' + ss
     
 
-def get_creation_time(filepath):
+def get_creation_time(filepath, verbose=True):
     """
     Try to get the date that a file was created, falling back to when it was
     last modified if that isn't possible.
     See http://stackoverflow.com/a/39501288/1709587 for explanation.
     """
     if platform.system() == 'Windows':
-        return os.path.getctime(filepath)
+        tstamp = os.path.getctime(filepath)
+        if verbose:
+            print('In Windows. Using os.path.getctime(\'' + filepath + '\') as tstamp.')
     else:
         stat = os.stat(filepath)
         try:
-            return stat.st_birthtime
+            tstamp = stat.st_birthtime
+            if verbose:
+                print('In Linux. Using os.stat(\'' + filepath + '\').st_birthtime as tstamp.')
         except AttributeError:
             # We're probably on Linux. No easy way to get creation dates here,
             # so we'll settle for when its content was last modified.
-            return stat.st_mtime    
+            tstamp = stat.st_mtime    
+            if verbose:
+                print('Couldn\'t get creation time! Returing modified time' + 
+                  'In Linux. Using os.stat(\'' + filepath + '\').st_mtime as tstamp.')
+    return tstamp
 
 def timestamp_from_file(filepath, verbose=True):
     a = re.search('[0-9]{2}h[0-9]{2}', filepath)
@@ -523,7 +531,8 @@ def text_to_data(file_lines, title='get_from_file',
                             if verbose and not col in commacols:
                                 print('ValueError on value ' + data + ' in column ' + col + ' line ' + str(nl) + 
                                       '\n Checking if you''re using commas as decimals in that column... ')
-                            data = data.replace('.','')        #in case there's also '.' as thousands separator, just get rid of it.
+                            data = data.replace('.','')        
+                            # ^ in case there's also '.' as thousands separator, just get rid of it.
                             data = data.replace(',','.')       #put '.' as decimals
                             data = float(data)
                             if not col in commacols:
@@ -533,7 +542,8 @@ def text_to_data(file_lines, title='get_from_file',
                         except ValueError:
                             if verbose :
                                 print(list(zip(col_headers,line_data)))
-                                print(title + ' in text_to_data: \nRemoved \'' + str(col) +'\' from data columns because of value \'' + 
+                                print(title + ' in text_to_data: \nRemoved \'' + str(col) +
+                                      '\' from data columns because of value \'' + 
                                     str(data) + '\' at line ' + str(nl) +'\n')
                             dataset['data_cols'].remove(col)
                             
@@ -563,7 +573,7 @@ def text_to_data(file_lines, title='get_from_file',
 
 
 
-def load_from_file(full_path_name='current', title='file', timestamp=None,
+def load_from_file(full_path_name='current', title='file', tstamp=None, timestamp=None,
                  data_type='EC', N_blank=10, tz=None, verbose=True):
     '''
     This method will organize the data in a file useful for
@@ -582,10 +592,12 @@ def load_from_file(full_path_name='current', title='file', timestamp=None,
         folder, title = os.path.split(full_path_name)
     file_lines = import_text(full_path_name, verbose)
     dataset = text_to_data(file_lines=file_lines, title=title, data_type=data_type, 
-                           timestamp=timestamp, N_blank=N_blank, tz=tz,
+                           timestamp=timestamp, N_blank=N_blank, tz=tz, tstamp=tstamp,
                            verbose=verbose)
-    if dataset['timestamp'] is None:
-        dataset['timestamp'] = timestamp_from_file(full_path_name, verbose=verbose)
+    if tstamp is not None: #then it overrides whatever test_to_data came up with.
+        dataset['tstamp'] = tstamp
+    elif dataset['tstamp'] is None:
+        dataset['tstamp'] = get_creation_time(full_path_name, verbose=verbose)
     numerize(dataset)
 
     if verbose:
@@ -605,7 +617,12 @@ def load_EC_set(directory, EC_file=None, tag='01',
         EC_file = [f for f in lslist if f[:2] == tag and f[-4:] == '.mpt']
     elif type(EC_file) is str:
         EC_file = [EC_file]
-    EC_datas = [load_from_file(directory + os.sep + f, data_type='EC', tz=tz, verbose=verbose) for f in EC_file]
+    EC_datas = []
+    for f in EC_file:
+        try:
+            EC_datas += [load_from_file(directory + os.sep + f, data_type='EC', tz=tz, verbose=verbose)]
+        except OSError:
+            print('problem with ' + f + '. Continuing.')
     EC_data = synchronize(EC_datas, verbose=verbose, append=True, t_zero='first', tz=tz)
     if 'loop number' in EC_data['data_cols']:
         sort_time(EC_data, verbose=verbose) #note, sort_time no longer returns!
