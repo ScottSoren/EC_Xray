@@ -181,7 +181,7 @@ def smooth_data(data_0, points=3, cols=None, verbose=True):
 
 def plot_simple(data, peaks={'XAS':'b'},
                 tspan=None, ax='new', unit='a.u.',
-                logplot=True, saveit=False, leg=False, 
+                logplot=False, saveit=False, leg=False, 
                 override=False, verbose=True):
     '''
     plots selected masses for a selected time range from MS data or EC_MS data
@@ -240,7 +240,7 @@ def plot_simple(data, peaks={'XAS':'b'},
     
 def plot_experiment(scan,
                     plot_type='timescan', peaks='existing',
-                    tspan=None, overlay=False, logplot=[True,False], verbose=True,   
+                    tspan=None, overlay=False, logplot=[False,False], verbose=True,   
                     plotpotential=True, plotcurrent=True, ax='new',
                     RE_vs_RHE=None, A_el=None, removebackground=True,
                     saveit=False, title=None, leg=False,
@@ -300,10 +300,11 @@ def plot_experiment(scan,
     
     A_el = data['A_el']
     
-    if object_file:
-        if plot_type == 'heat':
+    if object_file and plot_type == 'heat':
             scan.heat_plot(ax=ax[0], tspan=tspan, bg=bg)
-    elif plot_type == 'timescan':
+    elif plot_type in ['timescan', 'peaks', 'integrals']:
+        if object_file and peaks == 'existing':
+            peaks = dict([(n, p[1]) for n, p in scan.peaks.items()])
         plot_simple(data, ax=ax[0], peaks=peaks, tspan=tspan, logplot=logplot[0])
     
             

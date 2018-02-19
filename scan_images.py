@@ -10,6 +10,8 @@ import numpy as np
 #import matplotlib as mpl
 from scipy.interpolate import interp1d
 from matplotlib import pyplot as plt
+import time
+
 try:
     from moviepy.editor import VideoClip
     from moviepy.video.io.bindings import mplfig_to_npimage
@@ -61,7 +63,8 @@ def peak_colors(peak_list, colors=['k', 'b', 'r', 'g', 'c', 'm']):
     return integrals
 
 def get_background_line(spectrum, method='endpoint', floor=True, N_end=3, 
-                        p=0.1, out='values', verbose=False):
+                        steps0=2, lincutoff=True, p1=0.1, p2=0.4,
+                        name='\'name\'', out='values', verbose=False):
     '''
     A couple cool algorithms for finding a linear background to data with
     peaks, knowing that there's a risk that the data may start or end on 
@@ -71,10 +74,14 @@ def get_background_line(spectrum, method='endpoint', floor=True, N_end=3,
     Draws a line of best fit between the center of N_end left end points and 
     N_end right end points.
     If floor=True: If the portion of the points an amount below the line
-    corresponding to improbability p given the standard deviation of the 
-    residuals of the endpoitns has itself a probability less than p, 
+    corresponding to improbability p2 given the standard deviation of the 
+    residuals of the endpoitns has itself a probability less than p1, 
     the endpoints are moved inwards at steps of N_end, starting with the left
-    and minimizing the total number of steps in.    
+    and minimizing the total number of steps in. The initial number of steps
+    in, steps0, is 2 on each side by default to avoid cutoff effects. 
+    The background is assumed to drop linearly in the cutoff region if 
+    cutoff is True, and otherwise the cutoff region is assumed to be entirely
+    background up to the endpoint level.
     
     --------- method = 'filter' ------------
     Iteratively fit a line of best fit and remove outliers until there are
@@ -82,7 +89,7 @@ def get_background_line(spectrum, method='endpoint', floor=True, N_end=3,
     A point is considered an outlier if its square error from the fit line is
     greater than threshhold. threshhold is set such that the probability
     given a gaussian distribution of residual of having one outlier point
-    given the measured standard deviation is less than p.
+    given the measured standard deviation is less than p1.
     If floor=True, no outlying point lying below the line can be ignored.
     
     ---------
@@ -97,26 +104,42 @@ def get_background_line(spectrum, method='endpoint', floor=True, N_end=3,
     
     if method == 'endpoint':
         again = True
-        steps = [0, 0]
-        z = norm.ppf(1 - p) # max acceptable standard deviation from mean
-        sigma = np.sqrt(N * p * (1-p)) # standard deviation of number below
-        max_below = N * p + sigma * z
+        if type(steps0) is int:
+            steps0 = [steps0, steps0]
+        N_left, N_right = N_end*steps0[0], N_end*steps0[-1] # cutoff region
+        z = norm.ppf(0.5 + p1) # max acceptable standard deviation from mean
+        sigma = np.sqrt(N * p2 * (1-p2)) # standard deviation of number below
+        max_below = N * p2 + sigma * z
+        steps = steps0
         while again:
             left = np.arange(steps[0]*N_end, (steps[0] + 1)*N_end)
             right = np.arange(N - (steps[1] + 1)*N_end, N - steps[1]*N_end)
             both = np.append(left, right)
-            x_ends, y_ends = x[both], y[both]
+            try:
+                x_ends, y_ends = x[both], y[both]
+            except IndexError:
+                print('Couldn\'t find background endpoints meeting your ' + 
+                      ' demands for ' + name + '. steps = ' + str(steps))
+                raise
             poly = np.polyfit(x_ends, y_ends, 1)
             bg = poly[0] * x + poly[1]
+            if lincutoff: # bg drops linearly to zero in cutoff regions:
+                bg[:N_left] = np.linspace(0, bg[N_left], num=N_left)
+                bg[-N_right:] = np.linspace(bg[-N_right], 0, num=N_right)
+            else: # everything in cutoff up to linear bg is bg
+                bg[:N_left] = np.min(np.stack([y[:N_left],  \
+                                 np.tile(bg[N_left], (N_left,))]), axis=0)
+                bg[-N_right:] = np.min(np.stack([y[-N_right:],  \
+                                 np.tile(bg[-N_right], (N_right,))]), axis=0)
             if floor:
                 res_ends = y_ends - bg[both]
                 std = np.std(res_ends)
                 N_below = np.sum(y < bg - std * z)
                 again = (N_below > max_below)
-                if steps[0] == 0:
+                if steps[0] == steps0[0]:
                     if verbose:
                         print('moving left endpoint way in to find good background')
-                    steps = [steps[1] + 1, 0]
+                    steps = [steps[1] + 1, steps0[1]]
                 else:
                     steps = [steps[0] - 1, steps[1] + 1]
                     if verbose:
@@ -127,7 +150,8 @@ def get_background_line(spectrum, method='endpoint', floor=True, N_end=3,
         print('get_background_line(method=\'' + method + '\'...) ' + 
               'not implemented! Using method = \'endpoint\'')
         return get_background_line(spectrum, method='endpoint', floor=floor, 
-                                   N_end=N_end, p=p, out=out, verbose=verbose)
+                                   N_end=N_end, p1=p1, p2=p2, out=out,
+                                   verbose=verbose)
     if out=='line':
         return poly
     else:
@@ -295,7 +319,7 @@ class ScanImages:
                 pass
         self.tstamp = tstamp
         self.timestamp = timestamp
-        print('line 170: self.timestamp = ' + str(self.timestamp))
+        #print('line 170: self.timestamp = ' + str(self.timestamp))
         
         # This code is a bit of a mess, and timestamp is here only for sanity-checking
         #purposes. All math will refer to tstamp
@@ -319,12 +343,18 @@ class ScanImages:
         self.vverbose = vverbose
         self.bg = False # stores whether background has been subtracted
         
+        if self.verbose:
+            print('ScanImages object with name ' + self.name + 
+                  ' imported!\n\n')
+        
     
     def __len__(self):
         return len(self.images)
     
     def __getitem__(self, indices):
         if type(indices) is int:
+            if type(indices) is int and indices<0:
+                indices = len(self) + indices
             return self.images[indices]
         elif type(indices) in [list, tuple]:
             return [self.image[i] for i in indices]
@@ -347,8 +377,13 @@ class ScanImages:
                 try:
                     self.data['t'] = self.csv_data[self.timecol]
                 except KeyError:
-                    print('self.timecol = ' + str(self.timecol) + 
-                           ' is not in csv data. Check yo self.')
+                    if self.timecol is not None:
+                        print('self.timecol = ' + str(self.timecol) + 
+                              ' is not in csv data. Check yo self.')
+                    else:
+                        print('This is a timescan but there\'s no time ' +
+                              'variable specified. \nConsider using ' +
+                              'EC_Xray.time_cal() to calibrate and specify one.')
                     return
             # we can only reach here if 't' has been successfully put into self.data_cols
             if 't' not in self.data['data_cols']:
@@ -377,11 +412,11 @@ class ScanImages:
                 image.tth = tth
     
     def get_timecol_from_abstimecol(self):
-        abstime = self.csv_data[self.abstimecol]
+        abstimecol = self.csv_data[self.abstimecol]
         t = []
-        print('line 228: self.timestamp = ' + str(self.timestamp))
+        #print('line 228: self.timestamp = ' + str(self.timestamp))
         t0 = self.tstamp
-        for time in abstime:
+        for timecol in abstimecol:
             t += [timestamp_to_epoch_time(time, tz=self.tz) - t0]
         self.data['t'] = t
         if 't' not in self.data['data_cols']:
@@ -399,6 +434,14 @@ class ScanImages:
         spectrum specs are arguments to Pilatus.tth_spectrum, in module 
         pilatus.py
         '''
+        
+        if self.verbose:
+            print('\n\nfunction \'get_combined_spectrum\' at your service!\n')
+            t0 = time.time()
+            print('t = 0')
+            print('calculating tth spectrum for each of ' + str(len(self)) + 
+                  ' images, storing in Pilatus objects, and adding them all up.')
+
         if tth is not None:
             self.tth = tth
         bins = {}
@@ -418,7 +461,8 @@ class ScanImages:
                 else:
                     bins[n] = counts
                     contributors[n] = [i]
-
+        if self.verbose:
+            print('Counts per tth interval calculated locally and globally. ')
         tth_vec = []
         counts_vec = []
         n_min = min(bins.keys())
@@ -426,7 +470,7 @@ class ScanImages:
         for n in range(n_min, n_max+1):
             tth_vec += [(n + 0.5) * stepsize]
             if scan_method == 'average':
-                counts_vec += [bins[n]/contributors[n]]
+                counts_vec += [bins[n]/len(contributors[n])]
             else:
                 counts_vec += [bins[n]]
                 
@@ -445,21 +489,32 @@ class ScanImages:
         if 'counts' not in self.data['data_cols']:
             self.data['data_cols'] += ['counts']
         
+        if self.verbose:
+            print('Converted to global tth spectrum and stored in ScanImages oject.')
+            print('t = ' + str(time.time() - t0) + ' seconds.')
+            print('\nfunction \'get_combined_spectrum\' finished!\n\n')   
+
         if out == 'spectrum':
             return spectrum
         elif out == 'bins':
             return bins
-        
 
     
     def get_stacked_spectra(self, stepsize=0.05, override=False,
                           slits=True, xslits=None, yslits=None,
                           method='average', min_pixels=10, tth=None):
-        combined_spectrum = self.get_combined_spectrum(out='spectrum',
-                                                       stepsize=stepsize, 
-                                                       method=method, tth=tth,
-                                                       min_pixels=min_pixels,
-                                                       xslits=xslits, yslits=yslits) 
+        if self.verbose:
+            print('\n\nfunction \'get_stacked_spectra\' at your service!\n')
+        if not override and hasattr(self, 'spectrum') and self.spectrum is not None:
+            combined_spectrum = self.spectrum
+            if self.verbose:
+                print('using the already-calculated image spectra')
+        else:
+            combined_spectrum = self.get_combined_spectrum(out='spectrum',
+                                                           stepsize=stepsize, 
+                                                           method=method, tth=tth,
+                                                           min_pixels=min_pixels,
+                                                           xslits=xslits, yslits=yslits) 
         #this generates all the images' spectra, so they're saved when called later.
         tth_vec = combined_spectrum[0]       
         spectrums = []        # collection of the individual spectrum from each image
@@ -468,10 +523,12 @@ class ScanImages:
             #spectra were generated during call to self.get_combined_spectrum
             spectrums += [np.interp(tth_vec, tth_i, counts_i, left=0, right=0)]
             #spectra += [interp_with_zeros(tth_vec, tth_i, counts_i)] #may as well use numpy (above)       
-        
+
         spectra = np.stack(spectrums, axis=0) #a 2-d spectrum space for the scan
-        print('spectra shape : ' + str(np.shape(spectra)))
         self.spectra = spectra
+        if self.verbose:
+            print('self.spectra.shape = ' + str(np.shape(spectra)))
+            print('\nfunction \'get_stacked_spectra\' finished!\n\n')
         return spectra
     
     
@@ -491,8 +548,8 @@ class ScanImages:
                 del(im.map_bin)
             
     
-    def subtract_background(self, background='linear', background_type='local',
-                            N_end=3, p=0.1):
+    def subtract_background(self, background='endpoint', background_type='local',
+                            show=None, **kwargs):
         '''
         Generates background-subtracted tth spectrum and image tth spectra,
         to be saved as self.spectrumb and self.spectrab, respectively.
@@ -529,6 +586,8 @@ class ScanImages:
             'local': background subtraction is done directly for spectra,
         indirectly for spectrum.
         
+        Additional keward arguments are fed to get_background_line()
+        
         
         For tth scans, a background-subtracted total spectrum should perhaps
         be calculated instead... this might not be implemented yet.
@@ -546,12 +605,7 @@ class ScanImages:
             print('spectrum not calculated. Call get_combined_spectrum() or' + 
                   ' get_stacked_spectra() before subtracting background.')
             return
-        try:
-            spectra = self.spectra
-        except AttributeError:
-            if self.verbose:
-                print('getting stacked spectra.')
-            spectra = self.get_stacked_spectra()
+        spectra = self.get_stacked_spectra()
             
         # alocate space for background-subtracted spectrum and spectra 
         spectrumb = spectrum.copy()
@@ -590,7 +644,7 @@ class ScanImages:
             diff = np.diff(x)
             if not np.all(diff):
                 print('WARNING! self.data[\'' + background_type + '\'] is not ' +
-                      'monotonially increasong. I\'ll try to fix it but no guarantee.')
+                      'monotonially increasing.\n I\'ll try to fix it but no guarantee...')
             try:
                 interpolater = interp1d(x, spectra, axis=0, fill_value='extrapolate') 
                 if self.verbose:
@@ -606,7 +660,7 @@ class ScanImages:
                     background > x[0]
                     if not np.all(diff):
                         print('using a direction mask to interpolate on a ' +
-                              'monotonically increasing list. This will get ' +
+                              'monotonically increasing list.\nThis will get ' +
                               'the first time ' + background_type + ' passes '
                               + str(background))
                         direction = background > x[0]
@@ -614,6 +668,7 @@ class ScanImages:
                         x, t_i = x[mask], t_i[mask]
                         if not direction:
                             x, t_i = np.flipud(x), np.flipud(t_i)
+                    background_type = get_timecol(background_type)
                     background = np.interp(background, x, t_i)
                 except:
                     raise                    
@@ -622,13 +677,16 @@ class ScanImages:
                       background_type + ' = ' + str(background) + ' as background.')
             b0 = interpolater(background)
         elif type(background) in [int, float] and background_type == 'local':
-            print('will subtract the same constant background from each image spectrum')
+            if self.verbose:
+                print('will subtract the same constant background' + 
+                      ' from each image spectrum')
             b0 = background
-        else:
-            print('not a combination giving b0')
+        elif self.verbose:
+            print('not a combination giving b0. The background for each' + 
+                  ' image will be calculated individually.')
         
         if b0 is not None and self.verbose:
-            print('Inputs make sense!\n A constant background spectrum will ' + 
+            print('Inputs make sense: \nA constant background spectrum will ' + 
                   'be subtracted from each image spectrum in self.spectra')
         
         # ----- find background to global spectrum directly, if appropriate ---------
@@ -639,8 +697,9 @@ class ScanImages:
                 elif background.shape[0] == 2:
                     b1 = np.interp(spectrumb[0], background[0], background[1], left=0, right=0)
             elif background in ['linear', 'endpoint']:
-                b1 = get_background_line(spectrum, method=background, out='values', 
-                                         verbose=self.verbose)
+                b1 = get_background_line(spectrum, method=background, 
+                                         name='global', out='values', 
+                                         verbose=self.verbose, **kwargs)
             if self.verbose and b1 is not None:
                 print('Inputs make sense!\n' +  
                       'A global background spectrum will be subtracted.')
@@ -652,28 +711,32 @@ class ScanImages:
         if b0 is None:  #then the background to each spectrum must be found
             bg = {}
             for i, y_vec in enumerate(spectrab):
-                bg[i] = None
+                bg[i] = np.zeros(np.shape(y_vec)) # has the length of the full tth vec
+                bg_i = None #will only have the length of the image's tth vec
                 mask = ~(y_vec==0)
                 tth, y = tth_vec[mask], y_vec[mask]
                 spec = np.array([tth, y])
                 if background_type == 'global':        
                     #print('tth = ' + str(tth) + ', \n spectrumb[0] = ' + 
                     #      str(spectrumb[0]) + ', \b and b1 = ' + str(b1))    #debugging
-                    bg[i] = np.interp(tth, spectrumb[0], b1, left=0, right=0)                        
+                    bg_i = np.interp(tth, spectrumb[0], b1, left=0, right=0)                        
                     if self.scan_method == 'sum':
-                        bg[i] = bg[i] / self.N_contributors #normalize background to one image
+                        bg_i = bg_i / self.N_contributors[mask] #normalize background to one image
                 elif background in ['linear', 'endpoint']:
-                    bg[i] = get_background_line(spec, method=background, p=p, 
-                                             N_end=N_end, floor=True, 
-                                             out='values', verbose=self.vverbose)   
-                if bg[i] is not None:
-                    spectrab[i][mask] = y - bg[i][mask]
+                    #print(i) # for debugging
+                    bg_i = get_background_line(spec, method=background, 
+                                               name=' image number ' + str(i),
+                                               floor=True, out='values', 
+                                               verbose=self.vverbose, **kwargs)   
+                if bg_i is not None:
+                    bg[i][mask] = bg_i
+                    spectrab[i] = y_vec - bg[i]
             if b1 is None:  #calculate it from the individual backgrouhds, bgs
                 bgs = np.stack([bg[i] for i in range(len(self))], axis=0)
                 if self.scan_method == 'sum':
                     b1 = np.sum(bgs, axis=0)
                 else:
-                    b1 = np.mean(bgs, axis=0)
+                    b1 = np.sum(bgs, axis=0) / self.N_contributors
         else:   # if there is a constant background, subtract it from them all!
             spectrab = spectrab - np.tile(b0, (len(self), 1))
             if b1 is None:  # calculated it from b0
@@ -682,7 +745,13 @@ class ScanImages:
                 else:
                     b1 = b0
 
-            
+        if show:
+            i = show
+            fig, ax = plt.subplots()
+            x, y = spectrum[0], spectra[i]
+            ax.plot(x, y, 'k')
+            yb = bgs[i]
+            ax.plot(x, yb, 'r')            
         
         # ---------- finalize and save background-subtracted spectra ------ 
         #print('b1.shape = ' + str(b1.shape) + ', and spectrumb.shape = ' + str(spectrumb.shape))
@@ -710,6 +779,8 @@ class ScanImages:
                         stepsize=0.05, override=False,
                         slits=True, xslits=None, yslits=None, tth=None,
                         method='average', min_pixels=10, bg=None):
+        print('\n\nfunction \'integrate_peaks\' at your service!\n')
+        
         if bg is None:
             bg = self.bg
         try:
@@ -732,18 +803,20 @@ class ScanImages:
         
         x = self.spectrum[0]
         for i in range(len(self)):
-            print('working on image ' + str(i))
+            if self.vverbose:
+                print('working on image ' + str(i))
             y = spectra[i]
-            print('... calculated spectrum!')
             for name, props in peaks.items():
                 xspan = props[0]
                 I = integrate_peak(x, y, xspan, background=background,
                                    background_points=background_points)
-                print(name)
+                if self.vverbose:
+                    print(name)
                 if name not in integrals:
                     integrals[name] = []
-                integrals[name] += [I]      
-            print('... and integrated peaks!')
+                integrals[name] += [I]   
+            if self.vverbose:
+                print('Integrated peaks!')
             
         for key, value in integrals.items():  #numerize and save
             value = np.array(value)
@@ -751,7 +824,9 @@ class ScanImages:
             self.integrals[key] = value
             self.data[key] = value
             if key not in self.data['data_cols']:
-                self.data['data_col'] += [key]
+                self.data['data_cols'] += [key]
+
+        print('\nfunction \'integrate_peaks\' finished!\n\n')
             
         return(integrals)                     
 
@@ -778,6 +853,7 @@ class ScanImages:
         ax.plot(spectrum[0], spectrum[1], color=color)
         ax.set_ylabel('counts: ' + self.scan_method + '-' + self.method)
         ax.set_xlabel('tth / deg')
+        return ax
         
 
     def plot_integrals(self, peaks='existing',
@@ -789,7 +865,7 @@ class ScanImages:
             peaks = self.peaks
         if self.scan_type == 't':
             x = self.data['t']
-            x_str = 'time / s'
+            x_str = 'time / [s]'
         if 'integrals' not in dir(self):
             self.integrals = {}
         for (name, (xspan, color)) in peaks.items():
@@ -808,7 +884,7 @@ class ScanImages:
     def heat_plot(self, stepsize=0.05, override=False,
                           slits=True, xslits=None, yslits=None, tth=None,
                           method='average', bg=None, min_pixels=10, N_x=300, 
-                          ax='new', orientation='xy',
+                          ax='new', orientation='xy', logscale=False, zrange=None,
                           aspect='auto', colormap='inferno', 
                           tspan='all'):
         #get the raw spectra
@@ -827,8 +903,12 @@ class ScanImages:
             
         # Whatever we're scanning against is called x now.    
         if self.scan_type == 't':
-            x_i = self.data['t']
-            x_str = 'time / s'
+            if self.timecol is None:
+                timecol = 't'
+            else:
+                timecol = self.timecol
+            x_i = self.data[timecol]
+            x_str = 'time / [s]'
         if self.scan_type == 'tth':
             x_i = self.data['tth_scan']
             x_str = 'center tth / deg'
@@ -840,6 +920,19 @@ class ScanImages:
         else:
             x = np.linspace(tspan[0], tspan[-1], num=N_x)
         spectra = f(x)
+        if logscale:
+            spectra = np.log(spectra)
+        if zrange is None:
+            good = np.logical_and(~np.isnan(spectra), ~np.isinf(spectra))
+            low = np.min(spectra[good])
+            high = np.max(spectra[good])
+        else:
+            low = zrange[0]
+            high = zrange[1]
+        spectra[spectra<low] = low
+        spectra[spectra>high] = high
+        spectra[np.isnan(spectra)] = low
+        spectra[np.isinf(spectra)] = low
  
         # and of course the other dimension, which is tth:
         tth_vec = self.spectrum[0]  #I know this is linear, because it's defined here and in pilatus.py

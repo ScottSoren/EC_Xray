@@ -160,7 +160,7 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
                 date = dataset['date']
             if 'timestamp' in dataset:
                 timestamp = dataset['timestamp']
-            t_0 = timestamp_to_epoch_time(timestamp, date, tz=tz)
+            t_0 = timestamp_to_epoch_time(timestamp, date, tz=tz, verbose=verbose)
 
         if verbose:
                 print('\ttstamp is ' + str(t_0) + ' seconds since Epoch')
@@ -169,6 +169,7 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
         t_f = 0             # will increase to the latest finish of time data in the dataset
         
         for col in dataset['data_cols']:
+            #print('col = ' + str(col))
             if is_time(col):
                 try:
                     t_s = min(t_s, t_0 + dataset[col][0])   
@@ -229,7 +230,7 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
     combined_data['tspan_2'] = combined_data['tspan'] #old code calls this tspan_2.
 
     combined_data['tstamp'] = t_zero
-    combined_data['timestamp'] = epoch_time_to_timestamp(t_zero, tz=tz) 
+    combined_data['timestamp'] = epoch_time_to_timestamp(t_zero, tz=tz, verbose=verbose) 
     # ^ we want that timestamp refers to t=0
     
     combined_data['first'] = t_first - t_zero
@@ -664,7 +665,7 @@ def sort_time(dataset, data_type='EC', verbose=False, vverbose=False):
 
 
 def time_cal(data, ref_data=None, points=[(0,0)], point_type=['time', 'time'], 
-              time='t', pseudotime=None, reftime='time/s', verbose=True):
+             timecol='t', pseudotimecol=None, reftimecol='time/s', verbose=True):
     '''
     Calibrates the time column of a dataset according to sync points with a 
     reference dataset. tstamps are never changed.
@@ -679,11 +680,11 @@ def time_cal(data, ref_data=None, points=[(0,0)], point_type=['time', 'time'],
     for data and then for ref_data. Options are 'time', in which case the reference
     is to the actual value of the uncalibrated/reference time; and 'index' in 
     which case it is to the datapoint number of uncalibrated/reference time vector.
-        time: the name of the column of data into which to save the calibrated time
-        pseudotime: the name of the column of data containing the uncalibrated time.
+        timecol: the name of the column of data into which to save the calibrated time
+        pseudotimecol: the name of the column of data containing the uncalibrated time.
     By default pseudotime is taken to be the same as time, i.e. the uncalibrated
     time is overwritten by the calibrated time.
-        reftime: the name of the column of ref_data containing the reference time.
+        reftimecol: the name of the column of ref_data containing the reference time.
         verbose: True if you want the function to talk to you, useful for catching
     your mistakes and my bugs. False if you want a clean terminal or stdout.
     ------- output --------
@@ -703,7 +704,7 @@ def time_cal(data, ref_data=None, points=[(0,0)], point_type=['time', 'time'],
     
     
     if ref_data in ['absolute', 'epoch', None]:
-        ref_data = {reftime:None, 'tstamp':0} 
+        ref_data = {reftimecol:None, 'tstamp':0} 
         #this is enough to keep the loop from crashing
         print('time calbration referenced to absolute time! point_type[1] must be \'time\'.')
     if 'tstamp' not in ref_data:
@@ -715,7 +716,7 @@ def time_cal(data, ref_data=None, points=[(0,0)], point_type=['time', 'time'],
         if verbose:
             print('tstamp offset = ' + str(offset_0))
         
-    for i, t in enumerate([data[pseudotime], ref_data[reftime]]):    
+    for i, t in enumerate([data[pseudotimecol], ref_data[reftimecol]]):    
         # this loop will go through twice. First for time from data, then
         # for the reftime from refdata. sync_type is a vector of two corresponding
         # to these two iterations, as is each point of points.
@@ -759,7 +760,7 @@ def time_cal(data, ref_data=None, points=[(0,0)], point_type=['time', 'time'],
         if verbose:
             print('offset with respect to ref tstamp = ' + str(offset))
             print('total offset = ' + str(offset + offset_0))
-        data[time] = data[pseudotime] + offset + offset_0
+        data[timecol] = data[pseudotimecol] + offset + offset_0
     
     else:
         t, t_ref = t_vecs[:, mask]  # this drops any point that had a problem
@@ -771,10 +772,10 @@ def time_cal(data, ref_data=None, points=[(0,0)], point_type=['time', 'time'],
             print('time = ' + str(pf[0]) + ' * pseudotime + ' + str(pf[1]))
             print('with respect to tstamp:')
             print('time = ' + str(pf[0]) + ' * pseudotime + ' + str(pf[1] + offset_0))
-        data[time] = pf[0] * data[pseudotime] + pf[1] + offset_0
+        data[timecol] = pf[0] * data[pseudotimecol] + pf[1] + offset_0
 
     if time not in data['data_cols']:
-        data['data_cols'] += [time] # otherwise synchronizing later can give error
+        data['data_cols'] += [timecol] # otherwise synchronizing later can give error
     
     if verbose:
         print('\nfunction \'time_cal\' finished!\n\n')

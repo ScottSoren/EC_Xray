@@ -43,7 +43,7 @@ def parse_timezone(tz=None):
     else:
         return tz
 
-def timestamp_to_epoch_time(timestamp, date='today', tz=None):
+def timestamp_to_epoch_time(timestamp, date='today', tz=None, verbose=True):
     '''
     Possibly overly idiot-proof way to convert a number of timestamps read
     from my data into epoch (unix) time. 
@@ -58,20 +58,24 @@ def timestamp_to_epoch_time(timestamp, date='today', tz=None):
     '''
     if tz is not None:
         tz = parse_timezone(tz)
-        print('getting epoch time given a timestamp local to ' + str(tz))
+        if verbose:
+            print('getting epoch time given a timestamp local to ' + str(tz))
         epoch = pytz.utc.localize(datetime.datetime.utcfromtimestamp(0))
     if timestamp == 'now':
         return time.time()
     elif type(timestamp) is time.struct_time:
-        print('\'timestamp_to_unix_time\' revieved a time.struct_time object. ' +
-              'Returning the corresponding epoch time.')
+        if verbose:
+            print('\'timestamp_to_unix_time\' revieved a time.struct_time object. ' +
+                  'Returning the corresponding epoch time.')
     elif type(timestamp) is not str:
-        print('timestamp_to_unix_time\' didn\'t receive a string. Returning' + 
-              ' the argument.')
+        if verbose:
+            print('timestamp_to_unix_time\' didn\'t receive a string. Returning' + 
+                  ' the argument.')
         return timestamp
     if len(timestamp) > 8 and date=='today':
-        print('\'timestamp_to_unix_time\' is assuming' + 
-              ' the date and timestamp are input in the same string.')
+        if verbose:
+            print('\'timestamp_to_unix_time\' is assuming' + 
+                  ' the date and timestamp are input in the same string.')
         try:
             if tz is None:
                 struct = time.strptime(timestamp)
@@ -80,24 +84,30 @@ def timestamp_to_epoch_time(timestamp, date='today', tz=None):
                 dt_naive = datetime.datetime.strptime(timestamp, '%a %b %d %H:%M:%S %Y')
                 dt = tz.localize(dt_naive)
                 tstamp = (dt - epoch).total_seconds()
-            print('timestamp went straight into time.strptime()! Returning based on that.')
+            if verbose:
+                print('timestamp went straight into time.strptime()! Returning based on that.')
             return tstamp
         except ValueError:
-            print('bit \'' + timestamp + '\' is not formatted like ' + 
-                  'time.strptime() likes it. Checking another format')
+            if verbose:
+                print('bit \'' + timestamp + '\' is not formatted like ' + 
+                      'time.strptime() likes it. Checking another format')
             try:
                 date = re.search(date_match, timestamp).group()
-                print('Matched the date with \'' + date_match + '\'.')
+                if verbose:
+                    print('Matched the date with \'' + date_match + '\'.')
             except AttributeError:
-                print('Couldn\'t match with \'' + date_match +
-                      '\'. Assuming you want today.')
+                if verbose:
+                    print('Couldn\'t match with \'' + date_match +
+                          '\'. Assuming you want today.')
             try:
                 timestamp = re.search(timestamp_match, timestamp).group()
-                print('Matched the time with \'' + timestamp_match + '\'.' )
+                if verbose:
+                    print('Matched the time with \'' + timestamp_match + '\'.' )
             except AttributeError:
-                print('I got no clue what you\'re talking about, dude, ' +
-                      'when you say ' + timestamp + '. It didn\'t match \.' +
-                      timestamp_match + '\'. Assuming you want 00:00:00')
+                if verbose:
+                    print('I got no clue what you\'re talking about, dude, ' +
+                          'when you say ' + timestamp + '. It didn\'t match \.' +
+                          timestamp_match + '\'. Assuming you want 00:00:00')
                 timestamp = '00:00:00'            
     #h, m, s = (int(n) for n in timestamp.split(':'))
     #D, M, Y = (int(n) for n in re.split('[-/]', date))
@@ -113,7 +123,7 @@ def timestamp_to_epoch_time(timestamp, date='today', tz=None):
         
     return tstamp
     
-def epoch_time_to_timestamp(tstamp, tz=None):
+def epoch_time_to_timestamp(tstamp, tz=None, verbose=True):
     '''
     tz is the Timezone, which is only strictly necessary when synchronizing
     data taken at different places or accross dst at a place with different dst 
@@ -125,7 +135,8 @@ def epoch_time_to_timestamp(tstamp, tz=None):
         struct = time.localtime(tstamp)
     else:
         tz = parse_timezone(tz)
-        print('getting the timestamp local to ' + str(tz) + ' from epoch time.')
+        if verbose:
+            print('getting the timestamp local to ' + str(tz) + ' from epoch time.')
         dt_utc = datetime.datetime.utcfromtimestamp(tstamp)
         dt_tz = tz.fromutc(dt_utc)
         struct = dt_tz.timetuple()
@@ -193,14 +204,14 @@ def get_creation_time(filepath, verbose=True):
         try:
             tstamp = stat.st_birthtime
             if verbose:
-                print('In Linux. Using os.stat(\'' + filepath + '\').st_birthtime as tstamp.')
+                print('In linux. Using os.stat(\'' + filepath + '\').st_birthtime as tstamp.')
         except AttributeError:
             # We're probably on Linux. No easy way to get creation dates here,
             # so we'll settle for when its content was last modified.
             tstamp = stat.st_mtime    
             if verbose:
-                print('Couldn\'t get creation time! Returing modified time' + 
-                  'In Linux. Using os.stat(\'' + filepath + '\').st_mtime as tstamp.')
+                print('Couldn\'t get creation time! Returing modified time.\n' + 
+                  'In linux. Using os.stat(\'' + filepath + '\').st_mtime as tstamp.')
     return tstamp
 
 def timestamp_from_file(filepath, verbose=True):
@@ -492,7 +503,7 @@ def text_to_data(file_lines, title='get_from_file',
                     d = re.search(date_match, l)
                     if d is not None:
                         date = d.group()
-                    tstamp = timestamp_to_epoch_time(l, tz=tz) #the XAS data is saved with time.ctime()
+                    tstamp = timestamp_to_epoch_time(l, tz=tz, verbose=verbose) #the XAS data is saved with time.ctime()
                     if verbose:
                         print('timestamp \'' + timestamp + '\' found in line ' + str(nl)) 
                 header_string = header_string + line                
@@ -556,7 +567,7 @@ def text_to_data(file_lines, title='get_from_file',
     dataset['timestamp'] = timestamp
     dataset['date'] = date
     if tstamp is None:
-        tstamp = timestamp_to_epoch_time(timestamp, date, tz=tz)
+        tstamp = timestamp_to_epoch_time(timestamp, date, tz=tz, verbose=verbose)
     dataset['timezone'] = tz
     dataset['tstamp'] = tstamp 
     #UNIX epoch time, for proper synchronization!
@@ -587,7 +598,7 @@ def load_from_file(full_path_name='current', title='file', tstamp=None, timestam
     Use EC_MS's import_data instead!!!
     '''
     if verbose:
-        print('function \'load_from_file\' at your service!')
+        print('\n\nfunction \'load_from_file\' at your service!\n')
     if title == 'file':
         folder, title = os.path.split(full_path_name)
     file_lines = import_text(full_path_name, verbose)
@@ -601,14 +612,14 @@ def load_from_file(full_path_name='current', title='file', tstamp=None, timestam
     numerize(dataset)
 
     if verbose:
-        print('function \'load_from_file\' finished!')
+        print('\nfunction \'load_from_file\' finished!\n\n')
     return dataset 
     
     
 def load_EC_set(directory, EC_file=None, tag='01', 
                   verbose=True, tz=None): 
     if verbose:
-        print('\n\nfunction load_EC_set at your service!\n')
+        print('\n\nfunction \'load_EC_set\' at your service!\n')
     from .combining import synchronize, sort_time
     
     lslist = os.listdir(directory)
@@ -628,5 +639,5 @@ def load_EC_set(directory, EC_file=None, tag='01',
         sort_time(EC_data, verbose=verbose) #note, sort_time no longer returns!
         
     if verbose:
-         print('\nfunction load_EC_set finished!\n\n')       
+         print('\nfunction \'load_EC_set\' finished!\n\n')       
     return EC_data

@@ -63,7 +63,7 @@ def read_calibration(file):
 class Pilatus:
     def __init__(self, file, shape=shape_0, 
                  calibration=None, alpha=None, tth=None,
-                 slits=True, xslits=None, yslits=[60, 430], pixelmax=None, 
+                 slits=None, xslits=None, yslits=None, pixelmax=None, 
                  verbose=True):
         if verbose:
             print('loading Pilatus object for ' + file)
@@ -97,11 +97,13 @@ class Pilatus:
             self.dy = 1e-3
             self.db_pixel = (0,0)
         
-        self.slits = slits 
         self.alpha = alpha  # sample angle wrt direct beam / deg
         self.tth = tth      # detector angle wrt direct beam / deg
         self.xslits = xslits
         self.yslits = yslits
+        if slits is None:
+            slits = (yslits is not None or xslits is not None)
+        self.slits=slits
         
         if type(shape) not in [list, tuple]:
             shape = self.im.shape
