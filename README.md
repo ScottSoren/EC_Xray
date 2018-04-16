@@ -18,5 +18,5 @@ Enjoy!
 
 - scott
 
-p.s. if you use this for work that gets published, you don't have to cite it, but awesome if you'd like to! Let me know and I'll figure out how.
+p.s. if you use this for work that will be published, let me know and I'll figure out how to cite it.
 
