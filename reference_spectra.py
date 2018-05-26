@@ -114,8 +114,5 @@ def plot_ref_spectrum(crystal='Cu', ax='new', height=100, color=None,
     return ax
     
 
-if __name__ == '__main__':    
-    for (d, I, name) in xrd_ref['Cu(OH)2']:
-        print('(' + name + '), ' + str(I) + ' at tth = ' + str(get_tth(d=d*1e-10)))
     
     

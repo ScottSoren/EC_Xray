@@ -35,6 +35,7 @@ def get_images(directory, tag, shape=shape_0, calibration=calibration_0,
     except FileNotFoundError:
         print('The directory doesn\'t exist. get_images is returning a blank dictionary.')
         return {}
+    print(tag) # debugging
     if verbose:
         print(str(len(lslist)) + ' items in ' + directory)
     imagenames = [f for f in lslist if f[-4:]=='.raw' and tag in f]
@@ -182,7 +183,8 @@ def get_direction_mask(x, direction=True):
 class ScanImages:
 
     #-------------- functions for defining the scan ----------    
-    def __init__(self, csvfile=None, directory=None, pilatusfilebase='default', 
+    def __init__(self, csvfile=None, directory=None, name=None,
+                 pilatusfilebase='default', 
                  tag=None, scan_type='time', calibration=calibration_0, 
                  macro=None, tth=None, alpha=None, timestamp=None, tstamp=None, 
                  pixelmax=None, timecol=None, abstimecol=None, tz=None,
@@ -211,37 +213,73 @@ class ScanImages:
                 self.copied = 1
             return
         
-        # ------------------- get csv ---------------------#
+        # ------------------- get csv and name ---------------------#
         if csvfile is None:
             if tag is None or directory is None:
                 print('need a csv file name or a directory and a tag!')
                 return
             lslist = os.listdir(directory)
             try:
-                csvname = next(f for f in lslist if f[-4:]=='.csv' and tag in f)
+                csvname = next(f for f in lslist if f[-4:]=='.csv' and 'scan' in f and tag in f)
             except StopIteration:
                 print(lslist)
                 print('Cound not find a csvname containing ' + tag + ' in ' + directory + '\n(ls above)')
-            print('Loading Scan from directory = ' + directory +
-                  '\n found csvname = ' + csvname)            
+                csvname = None
+          
         else:
             directory, csvname = os.path.split(csvfile)
+            
+        print('Loading Scan from directory = ' + directory +
+              '\n found csvname = ' + str(csvname))   
         
-        csvfilepath = directory + os.sep + csvname
-        #self.csv_data = load_from_csv(csvfilepath, timestamp=timestamp)
-        name = csvname[:-4] # to drop the .csv
-        print('Loading Scan: directory = ' + directory + ',\n\tname = ' + name)
+        if name is None:
+            if csvname is not None:
+                name = csvname[:-4] # to drop the .csv
+            else:
+                name = tag
         
-        self.csv_data = load_from_file(csvfilepath, data_type='SPEC', 
-                                       timestamp=timestamp, tstamp=tstamp, tz=tz)
+        if csvname is not None:
+            csvfilepath = directory + os.sep + csvname
+            self.csv_data = load_from_file(csvfilepath, data_type='SPEC', 
+                                           timestamp=timestamp, tstamp=tstamp, tz=tz)
+            self.csvfilepath = csvfilepath      
+
+
+        #-------------------- get images! ------------------------#
+        if pilatusfilebase == 'default':
+            for foldername in ['images', 'Pilatus']:
+                pilatus_directory = directory + os.sep + foldername
+                if os.path.isdir(pilatus_directory):
+                    break
+            else:
+                print('could not find pilatus directory!')
+            tag_pilatus = name
+        else:
+            pilatus_directory, tag_pilatus = os.path.split(pilatusfilebase)
+        self.images = get_images(pilatus_directory, tag=tag_pilatus, 
+                                 calibration=calibration, verbose=verbose,
+                                 pixelmax=pixelmax,
+                                 slits=slits, xslits=xslits, yslits=yslits, 
+                                 vverbose=vverbose)
+        
+        if len(self.images) == 0:
+            print('THIS SCAN IS EMPTY!!!!')
+            self.empty = True
+            return
+        else:
+            self.empty = False
+        
         
         # --------------  install easy metadata ------------- #
         self.directory = directory
         self.name = name
-        self.csvfilepath = csvfilepath
         self.timecol = timecol
         self.abstimecol = abstimecol
         self.tz = tz        
+        self.bg = False # stores whether background has been subtracted
+
+        self.verbose = verbose
+        self.vverbose = vverbose
         
         if scan_type in ['time', 't']:
             self.scan_type = 't'
@@ -262,41 +300,47 @@ class ScanImages:
         self.alpha = alpha
 
         #try to read stuff from file name
-        for match in re.findall('_[A-Za-z]+[n?][0-9]+[p[0-9]+]?', csvname):
-            attr = re.search('[A-Za-z]', match).group()
-            value = re.search('[0-9]+[n]?[p[0-9]+]?', match).group()
-            try:
-                value = float(value.replace('p','.').replace('n','-'))
-            except ValueError:
-                print('not sure what ' + value + ' is.')
-            if not hasattr(self, attr):
-                setattr(self, attr, value)
-            elif getattr(self, value) is None:
-                setattr(self, attr, value)   
-
-        #-------------------- get images! ------------------------#
-        if pilatusfilebase == 'default':
-            pilatus_directory = directory + os.sep + 'Pilatus'
-            tag_pilatus = name
-        else:
-            pilatus_directory, tag_pilatus = os.path.split(pilatusfilebase)
-        self.images = get_images(pilatus_directory, tag=tag_pilatus, 
-                                 calibration=calibration, verbose=verbose,
-                                 pixelmax=pixelmax,
-                                 slits=slits, xslits=xslits, yslits=yslits, 
-                                 vverbose=vverbose)
+        if csvname is not None:
+            for match in re.findall('_[A-Za-z]+[n?][0-9]+[p[0-9]+]?', csvname):
+                attr = re.search('[A-Za-z]', match).group()
+                value = re.search('[0-9]+[n]?[p[0-9]+]?', match).group()
+                try:
+                    value = float(value.replace('p','.').replace('n','-'))
+                except ValueError:
+                    print('not sure what ' + value + ' is.')
+                if not hasattr(self, attr):
+                    setattr(self, attr, value)
+                elif getattr(self, value) is None:
+                    setattr(self, attr, value)   
+                
         
-        if len(self.images) == 0:
-            print('THIS SCAN IS EMPTY!!!!')
-            self.empty = True
-            return
+
+        # ------------------------- organize csvdata and metadata ---------- #        
+        
+        if hasattr(self, 'csv_data'):
+            self.data = self.csv_data.copy()
+            self.csv_into_images()
         else:
-            self.empty = False
+            self.data = {'title':name, 'data_type':'spec'}
+            self.data['data_cols'] = []
+        
+        for col, attr in [('TwoTheta', 'tth'), ('alpha','alpha'), ('t_abs', 'tstamp')]:
+            self.data[col] = np.array([getattr(self.images[i], attr) for i in range(len(self))])
+            self.data['data_cols'] += [col]
+                
+        # this will conveniently store useful data, some from csv_data
+
+        if timecol is None and abstimecol is not None:
+            # put in the timecol!
+            self.get_timecol_from_abstimecol()
+
 
         # ---------------------- get timestamp and timecol -----------------#
         if timestamp in ['filename', 'csv','file']:
             tstamp = self.csv_data['tstamp']
             timestamp = epoch_time_to_timestamp(tstamp, tz=tz)
+        elif timestamp in ['pdi']:
+            tstamp = self.images[0].tstamp
         elif timestamp in ['abstimecol']:
             try:
                 value = self.csv_data[abstimecol][0]
@@ -317,36 +361,46 @@ class ScanImages:
                     #first datapoint
             except OSError: # a dummy error... I want to actually get the error messages at first
                 pass
+        
+        if self.scan_type == 't':
+            if 't' not in self.data:
+                if 't_abs' in self.data:
+                    tstamp = self.data['t_abs'][0]
+                    t = self.data['t_abs'] - tstamp
+                else:
+                    try:
+                        t = self.csv_data[self.timecol]
+                    except KeyError:
+                        if self.timecol is not None:
+                            print('self.timecol = ' + str(self.timecol) + 
+                                  ' is not in csv data. Check yo self.')
+                        else:
+                            print('This is a timescan but there\'s no time ' +
+                                  'variable specified. \nConsider using ' +
+                                  'EC_Xray.time_cal() to calibrate and specify one.')
+                        return
+            # we can only reach here if 't' has been successfully put into self.data_cols
+                self.data['t'] = t
+            if 't' not in self.data['data_cols']:
+                self.data['data_cols'] += ['t']            
+
         self.tstamp = tstamp
         self.timestamp = timestamp
-        #print('line 170: self.timestamp = ' + str(self.timestamp))
         
-        # This code is a bit of a mess, and timestamp is here only for sanity-checking
-        #purposes. All math will refer to tstamp
-        
-
-        # ------------------------- organize csvdata and metadata ---------- #        
-  
-        self.data = self.csv_data.copy()
-        # this will conveniently store useful data, some from csv_data
-
-        if timecol is None and abstimecol is not None:
-            # put in the timecol!
-            self.get_timecol_from_abstimecol()
         if 'tstamp' not in self.data or self.data['tstamp'] is None:
             # and the tstamp!
             self.data['tstamp'] = tstamp
-            
-        self.csv_into_images()
-
-        self.verbose = verbose
-        self.vverbose = vverbose
-        self.bg = False # stores whether background has been subtracted
         
+        #print('line 170: self.timestamp = ' + str(self.timestamp))
+        # This code is a bit of a mess, and timestamp is here only for sanity-checking
+        #purposes. All math will refer to tstamp
+        
+        #------- finished ---------- #
         if self.verbose:
             print('ScanImages object with name ' + self.name + 
-                  ' imported!\n\n')
-        
+                  ' imported!\n\n')        
+    
+    
     
     def __len__(self):
         return len(self.images)
@@ -371,23 +425,10 @@ class ScanImages:
                 # The tth and alpha are not saved anywhere. The user must 
                 # input them, or input a macro to read. Done in self.__init__
                 #print('putting tth=' + str(self.tth) + ' into image!') #debugging
-                self.images[i].tth = self.tth
-                self.images[i].alpha = self.alpha
-            if 't' not in self.data:
-                try:
-                    self.data['t'] = self.csv_data[self.timecol]
-                except KeyError:
-                    if self.timecol is not None:
-                        print('self.timecol = ' + str(self.timecol) + 
-                              ' is not in csv data. Check yo self.')
-                    else:
-                        print('This is a timescan but there\'s no time ' +
-                              'variable specified. \nConsider using ' +
-                              'EC_Xray.time_cal() to calibrate and specify one.')
-                    return
-            # we can only reach here if 't' has been successfully put into self.data_cols
-            if 't' not in self.data['data_cols']:
-                self.data['data_cols'] += ['t']
+                if self.images[i].tth is None:
+                    self.images[i].tth = self.tth
+                if self.images[i].alpha is None:
+                    self.images[i].alpha = self.alpha
             for i in range(len(self)):               
                 self.images[i].t = self.data['t'][i] #even though this is never read
                 
@@ -700,6 +741,8 @@ class ScanImages:
                 b1 = get_background_line(spectrum, method=background, 
                                          name='global', out='values', 
                                          verbose=self.verbose, **kwargs)
+            elif type(background) in [int, float, np.float64]:
+                b1 = np.tile(background, np.size(tth_vec))
             if self.verbose and b1 is not None:
                 print('Inputs make sense!\n' +  
                       'A global background spectrum will be subtracted.')
@@ -835,7 +878,7 @@ class ScanImages:
     
     #-------------- functions for plots and videos ----------    
     
-    def plot_spectrum(self, bg=None, ax='new', color='k'):
+    def plot_spectrum(self, bg=None, ax='new', fig=None, color='k'):
         if ax == 'new':
             fig, ax = plt.subplots()
         if bg is None:
@@ -853,7 +896,9 @@ class ScanImages:
         ax.plot(spectrum[0], spectrum[1], color=color)
         ax.set_ylabel('counts: ' + self.scan_method + '-' + self.method)
         ax.set_xlabel('tth / deg')
-        return ax
+        if fig is None:
+            fig = ax.get_figure()
+        return fig, ax
         
 
     def plot_integrals(self, peaks='existing',
@@ -881,7 +926,7 @@ class ScanImages:
         return ax
     
     
-    def heat_plot(self, stepsize=0.05, override=False,
+    def heat_plot(self, stepsize=0.05, override=False, tthspan=None,
                           slits=True, xslits=None, yslits=None, tth=None,
                           method='average', bg=None, min_pixels=10, N_x=300, 
                           ax='new', orientation='xy', logscale=False, zrange=None,
@@ -920,6 +965,17 @@ class ScanImages:
         else:
             x = np.linspace(tspan[0], tspan[-1], num=N_x)
         spectra = f(x)
+
+
+        # and of course the other dimension, which is tth:
+        tth_vec = self.spectrum[0]  #I know this is linear, because it's defined here and in pilatus.py
+        
+        if tthspan is not None:
+            mask = np.logical_and(tthspan[0]<tth_vec, tth_vec<tthspan[-1])
+            spectra = spectra[:,mask]
+            print(spectra.shape)
+            tth_vec = tth_vec[mask]
+        
         if logscale:
             spectra = np.log(spectra)
         if zrange is None:
@@ -934,9 +990,6 @@ class ScanImages:
         spectra[np.isnan(spectra)] = low
         spectra[np.isinf(spectra)] = low
  
-        # and of course the other dimension, which is tth:
-        tth_vec = self.spectrum[0]  #I know this is linear, because it's defined here and in pilatus.py
-
         if orientation == 'xy':
             spectra = np.swapaxes(spectra, 0, 1)
             extent=[x[0], x[-1], tth_vec[0], tth_vec[-1]]
@@ -954,8 +1007,10 @@ class ScanImages:
             ax.set_ylabel(x_str)
             ax.set_xlabel('TwoTheta / deg')
         return ax
-        
-
+    
+    def plot_experiment(self, *args, **kwargs):
+        from .plotting import plot_experiment
+        return plot_experiment(self, *args, **kwargs)
     
     def make_spectrum_movie(self, duration=20, fps=24,
                    title='default', peaks='existing', bg=None,

@@ -11,10 +11,11 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 
-calibration_0 = {'direct_beam_x': 	 277,
-                 'direct_beam_y': 	 91,
+calibration_0 = {'direct_beam_x': 	 255,
+                 'direct_beam_y': 	 98,
                  'Sample_Detector_distance_pixels': 	4085.27,
                  'Sample_Detector_distance_mm':      702.666}
+
 
 
 shape_0 = (195, 487)
@@ -49,6 +50,58 @@ def read_RAW(file, shape=shape_0, verbose=True, pixelmax=None):
     #    print("Error reading file: %s" % file)
     #    return None
 
+def read_pdi(file, verbose=True):
+    
+    import re
+    float_match = r'[-]?\d+[\.]?\d*(e[-]?\d+)?'     
+    #matches floats like '-3.54e4' or '7' or '245.13' or '1e-15'
+    
+    try:
+        with open(file, 'r') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        if file[-4:] == '.pdi':
+            if verbose:
+                print('can\'t find ' + file)
+            return None
+        else:
+            file += '.pdi'
+            return read_pdi(file, verbose=verbose)
+    
+    if verbose:
+        print('reading ' + file)
+    
+    pdi = {}
+    try:    
+        tstamp = float(lines[-1])
+        pdi['tstamp'] = tstamp
+    except ValueError:
+        if verbose:
+            print('couldn\'t read tstamp from last line')
+    if verbose:
+        print('found tstamp = ' + str(tstamp) + ' on last line.')
+    
+    tth_match = '2Theta = ' + float_match
+    th_match = r'(^|[^2])' + 'Theta = ' + float_match
+    for n, line in enumerate(lines):
+        a = re.search(tth_match, line)
+        b = re.search(th_match, line)
+        
+        if a is not None:
+            aa = re.search(float_match, a.group()[1:])
+            pdi['tth'] = float(aa.group())
+            if verbose:
+                print('\tfound tth = ' + str(pdi['tth']) + ' on line ' + str(n))
+        
+        if b is not None:
+            bb = re.search(float_match, b.group())
+            pdi['alpha'] = float(bb.group())        
+            if verbose:
+                print('\tfound alpha = ' + str(pdi['alpha']) + ' on line ' + str(n))    
+    #print(1 + ' ') #debugging
+    return pdi
+    
+
 def read_calibration(file):
     calibration = {}
     with open(file) as cal:
@@ -62,7 +115,7 @@ def read_calibration(file):
 
 class Pilatus:
     def __init__(self, file, shape=shape_0, 
-                 calibration=None, alpha=None, tth=None,
+                 calibration=None, alpha=None, tth=None, tstamp=None,
                  slits=None, xslits=None, yslits=None, pixelmax=None, 
                  verbose=True):
         if verbose:
@@ -72,6 +125,7 @@ class Pilatus:
         self.directory = directory
         self.name = name
         self.im = read_RAW(file, shape=shape, pixelmax=pixelmax, verbose=verbose)
+        self.pdi = read_pdi(file + '.pdi', verbose=verbose)
         if type(calibration) is str: #then it's a file
             calibration = read_calibration(calibration)
         self.calibration = calibration
@@ -99,8 +153,18 @@ class Pilatus:
         
         self.alpha = alpha  # sample angle wrt direct beam / deg
         self.tth = tth      # detector angle wrt direct beam / deg
+        self.tstamp = tstamp
         self.xslits = xslits
         self.yslits = yslits
+        
+        if self.pdi is not None:
+            if self.alpha is None and 'alpha' in self.pdi:
+                self.alpha = self.pdi['alpha']
+            if self.tth is None and 'tth' in self.pdi:
+                self.tth = self.pdi['tth']       
+            if self.tstamp is None and 'tstamp' in self.pdi:
+                self.tstamp = self.pdi['tstamp']
+        
         if slits is None:
             slits = (yslits is not None or xslits is not None)
         self.slits=slits
@@ -249,9 +313,9 @@ class Pilatus:
     def get_map_sphere(self, tth=None, override=False):
         '''           
      z' ^       (i,j)       Illustrated: transformation of cartesian to spherical coordinates 
-        |       __-*-_  y   At tth=0, the detector is in the z' direction from the sample
-        | tth__/  |:  ->    At tth=90 deg, the detector is in the y' direction from the sample
-        | __/   x v:        local (x, y) directions correspond to (phi, tth) directons at db pixel
+        |       __-*-_  y   At tth=0, the detector is in the z' direction from the sample.
+        | tth__/  |:  ->    At tth=90 deg, the detector is in the y' direction from the sample.
+        | __/   x v:        local (x, y) directions correspond to (phi, tth) directons at db pixel.
         .----------:--> y'  Standard spherical coordinates transformed from (x,y,z)' 
          \'~.. phi :        [such that first coordinate is distance from sample to pixel (i,j)
           \   '~~..!        first angle (second coordinate) is between z' axis and pixel (i,j)

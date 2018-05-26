@@ -232,9 +232,10 @@ def plot_simple(data, peaks={'XAS':'b'},
     if logplot: 
         ax.set_yscale('log') 
     ax.tick_params(axis='both', direction='in') #17K28  
+    
     if verbose:
         print('function \'plot_simple\' finsihed! \n\n')
-    return ax
+    return fig, ax
 
 
     
@@ -243,7 +244,7 @@ def plot_experiment(scan,
                     tspan=None, overlay=False, logplot=[False,False], verbose=True,   
                     plotpotential=True, plotcurrent=True, ax='new',
                     RE_vs_RHE=None, A_el=None, removebackground=True,
-                    saveit=False, title=None, leg=False,
+                    saveit=False, title=None, leg=False, tthspan=None,
                     V_color='k', J_color='r', V_label=None, J_label=None,
                     fig=None, t_str=None, J_str=None, V_str=None, bg=None,
                     ): 
@@ -301,7 +302,7 @@ def plot_experiment(scan,
     A_el = data['A_el']
     
     if object_file and plot_type == 'heat':
-            scan.heat_plot(ax=ax[0], tspan=tspan, bg=bg)
+            scan.heat_plot(ax=ax[0], tspan=tspan, bg=bg, tthspan=tthspan)
     elif plot_type in ['timescan', 'peaks', 'integrals']:
         if object_file and peaks == 'existing':
             peaks = dict([(n, p[1]) for n, p in scan.peaks.items()])
@@ -385,11 +386,14 @@ def plot_experiment(scan,
         if title == 'default':
             title == data['title'] + '.png'
         figure1.savefig(title)
-        
+    
+    if fig is None:
+        fig = ax[0].get_figure()
+    
     if verbose:
         print('function \'plot_experiment\' finished!\n\n')
     
-    return ax
+    return fig, ax
 
 
 def plot_datapoints(integrals, colors, ax='new', label='', X=None, X_str='V',
