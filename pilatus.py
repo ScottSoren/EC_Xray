@@ -31,7 +31,11 @@ def read_RAW(file, shape=shape_0, verbose=True, pixelmax=None):
     if True:
     #try:    # I want to see what error it gives when there's an error.
         with open(file, 'rb') as im:
-            arr = np.fromstring(im.read(), dtype='int32')
+            try:
+                arr = np.fromstring(im.read(), dtype='int32')
+            except OSError:
+                print('ERROR: problem with ' + file)
+                raise
         if pixelmax is not None:
             arr[arr>pixelmax] = pixelmax
         if shape == 'square':
@@ -440,7 +444,9 @@ class Pilatus:
             ax.set_ylabel('counts')
         elif self.method == 'average':
             ax.set_ylabel('counts per pixel')
-        return ax
+        if 'fig' not in locals():
+            fig = ax.get_figure()
+        return fig, ax
     
     
     

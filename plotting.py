@@ -232,7 +232,8 @@ def plot_simple(data, peaks={'XAS':'b'},
     if logplot: 
         ax.set_yscale('log') 
     ax.tick_params(axis='both', direction='in') #17K28  
-    
+    if not 'fig' in locals():
+        fig = ax.get_figure()
     if verbose:
         print('function \'plot_simple\' finsihed! \n\n')
     return fig, ax

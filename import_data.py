@@ -117,7 +117,10 @@ def timestamp_to_epoch_time(timestamp, date='today', tz=None, verbose=True):
         struct = time.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
         tstamp = time.mktime(struct)
     else:
-        dt_naive = datetime.datetime.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
+        try:
+            dt_naive = datetime.datetime.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
+        except ValueError:
+            dt_naive = datetime.datetime.strptime(date + ' ' + timestamp, '%m-%d-%Y %H:%M:%S')            
         dt = tz.localize(dt_naive)
         tstamp = (dt - epoch).total_seconds()
         
@@ -443,7 +446,8 @@ def text_to_data(file_lines, title='get_from_file',
     
     if sep is None:  #EC, XAS, and MS data all work with '\t'
         sep = '\t'
-
+    
+    quitloop = False
     for nl, line in enumerate(file_lines):
         l = line.strip()        
         if nl < N_head - 1:            #we're in the header
@@ -531,6 +535,7 @@ def text_to_data(file_lines, title='get_from_file',
                 if nl == N_lines - 1 and data_type=='MS':    # this is usually not useful!
                     print('mismatch due to an incomplete last line of ' + title + '. I will discard the last line.')
                     break
+            data_cols = dataset['data_cols'].copy()
             for col, data in zip(col_headers, line_data):
                 if col in dataset['data_cols']:
                     try:
@@ -552,13 +557,24 @@ def text_to_data(file_lines, title='get_from_file',
                                 commacols += [col]
                         except ValueError:
                             if verbose :
-                                print(list(zip(col_headers,line_data)))
+                                #print(list(zip(col_headers,line_data))) # debugging
                                 print(title + ' in text_to_data: \nRemoved \'' + str(col) +
                                       '\' from data columns because of value \'' + 
                                     str(data) + '\' at line ' + str(nl) +'\n')
                             dataset['data_cols'].remove(col)
-                            
+                            #print(dataset['data_cols']) # debugging
+                            if len(dataset['data_cols']) == 0:
+                                if verbose:
+                                    print('there\'s a full line of value errors. Must me something wrong. ' +
+                                          'Terminating loop.')
+                                    dataset['data_cols'] = data_cols
+                                    quitloop = True
                 dataset[col].append(data)
+        if quitloop:
+            print('removing last line from datacols and quitting loop')
+            for col in dataset['data_cols']:
+                dataset[col] = dataset[col][:-1]
+            break
                     
     if loop:
         dataset['data_cols'] += ['loop number']        
