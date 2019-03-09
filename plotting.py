@@ -248,6 +248,8 @@ def plot_experiment(scan,
                     saveit=False, title=None, leg=False, tthspan=None,
                     V_color='k', J_color='r', V_label=None, J_label=None,
                     fig=None, t_str=None, J_str=None, V_str=None, bg=None,
+                    split_tth=None, splitspec={'color':'g', 'linestyle':'-'},
+                    spec={}, emphasis='XRD', return_gridspec=False,
                     ): 
     '''
     this plots signals or fluxes on one axis and current and potential on other axesaxis
@@ -267,13 +269,32 @@ def plot_experiment(scan,
             ax = [figure1.add_subplot(111)]
             ax += [ax[0].twinx()]                     
         else:
-            gs = gridspec.GridSpec(3, 1)
-            #gs.update(hspace=0.025)
-            #gs.update(hspace=0.05)
-            ax = [plt.subplot(gs[0:2, 0])]
-            ax += [plt.subplot(gs[2, 0])]
+            if emphasis == 'XRD':
+                gs = gridspec.GridSpec(3, 1)
+                #gs.update(hspace=0.025)
+                ax1 = plt.subplot(gs[0:2, 0])
+                ax2 = plt.subplot(gs[2, 0])
+            elif emphasis == 'xrd':
+                gs = gridspec.GridSpec(5, 1)
+                #gs.update(hspace=0.025)
+                ax1 = plt.subplot(gs[0:3, 0])
+                ax2 = plt.subplot(gs[3:5, 0])           
+            elif emphasis == 'EC':
+                gs = gridspec.GridSpec(3, 1)
+                #gs.update(hspace=0.025)
+                ax1 = plt.subplot(gs[0, 0])
+                ax2 = plt.subplot(gs[1:3, 0])    
+            else:
+                gs = gridspec.GridSpec(2, 1)
+                #gs.update(hspace=0.025)
+                ax1 = plt.subplot(gs[0, 0])
+                ax2 = plt.subplot(gs[1, 0]) 
+            ax = [ax1, ax2]
             if plotcurrent and plotpotential:
                 ax += [ax[1].twinx()]
+            if return_gridspec: 
+                # this command for some reason makes it impossible to do tight_layout() later
+                gs.update(hspace=0.1)
     
     object_file = False
     if type(scan) is dict:
@@ -303,7 +324,8 @@ def plot_experiment(scan,
     A_el = data['A_el']
     
     if object_file and plot_type == 'heat':
-            scan.heat_plot(ax=ax[0], tspan=tspan, bg=bg, tthspan=tthspan)
+            scan.heat_plot(ax=ax[0], tspan=tspan, bg=bg, tthspan=tthspan,
+                          split_tth=split_tth, splitspec=splitspec)
     elif plot_type in ['timescan', 'peaks', 'integrals']:
         if object_file and peaks == 'existing':
             peaks = dict([(n, p[1]) for n, p in scan.peaks.items()])
@@ -313,7 +335,7 @@ def plot_experiment(scan,
     ax[0].set_xlim(tspan)
     ax[0].xaxis.tick_top()
     ax[0].xaxis.set_label_position('top')  
-    ax[0].tick_params(axis='both', direction='in')    
+    ax[0].tick_params(axis='both', which='both', direction='in')    
 
     if title is not None:
             plt.title(title)
@@ -350,7 +372,7 @@ def plot_experiment(scan,
 
     i_ax = 1
     if plotpotential:
-        ax[i_ax].plot(t, V, color=V_color, label=V_label)
+        ax[i_ax].plot(t, V, color=V_color, label=V_label, **spec)
         ax[i_ax].set_ylabel(V_str)
         if len(logplot) >2:
             if logplot[2]:
@@ -360,11 +382,11 @@ def plot_experiment(scan,
         ax[i_ax].yaxis.label.set_color(V_color)
         ax[i_ax].tick_params(axis='y', colors=V_color)
         ax[i_ax].spines['left'].set_color(V_color)
-        ax[i_ax].tick_params(axis='both', direction='in') #17K28  
+        ax[i_ax].tick_params(axis='both', which='both', direction='in') #17K28  
         i_ax += 1
         
     if plotcurrent:
-        ax[i_ax].plot(t, J, color=J_color, label=J_label)
+        ax[i_ax].plot(t, J, color=J_color, label=J_label, **spec)
         ax[i_ax].set_ylabel(J_str)
         ax[i_ax].set_xlabel('time / [s]')
         xlim = ax[i_ax-1].get_xlim()
@@ -377,7 +399,7 @@ def plot_experiment(scan,
             ax[i_ax].spines['right'].set_color(J_color)
         else:
             ax[i_ax].spines['left'].set_color(J_color)
-        ax[i_ax].tick_params(axis='both', direction='in')
+        ax[i_ax].tick_params(axis='both', which='both', direction='in') #17K28  
         
     if plotcurrent or plotpotential:
         ax[1].set_xlabel('time / [s]')
@@ -394,6 +416,8 @@ def plot_experiment(scan,
     if verbose:
         print('function \'plot_experiment\' finished!\n\n')
     
+    if return_gridspec:
+        return gs, ax
     return fig, ax
 
 

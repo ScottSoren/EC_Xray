@@ -114,7 +114,10 @@ def timestamp_to_epoch_time(timestamp, date='today', tz=None, verbose=True):
     if date == 'today':
         date = time.strftime('%m/%d/%Y')
     if tz is None:
-        struct = time.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
+        try:
+            struct = time.strptime(date + ' ' + timestamp, '%m/%d/%Y %H:%M:%S')
+        except ValueError:
+            struct = time.strptime(date + ' ' + timestamp, '%m-%d-%Y %H:%M:%S')            
         tstamp = time.mktime(struct)
     else:
         try:
@@ -186,9 +189,16 @@ def get_creation_timestamp(filepath):
     '''
     t = get_creation_time(filepath)
     struct = time.localtime(t)
+    print('creation time sctructure = ' + str(struct)) # debugging
     hh = str(struct.tm_hour)
-    mm = str(struct.tm_minute)
-    ss = str(struct.tm_second)
+    try:
+        mm = str(struct.tm_minute)
+    except AttributeError:  # it seems to have changed from tm_minute to tm_min
+        mm = str(struct.tm_min)
+    try:
+        ss = str(struct.tm_second)
+    except AttributeError: # it seems to have changed from tm_second to tm_sec
+        ss = str(struct.tm_sec)
     return hh + ':' + mm + ':' + ss
     
 
@@ -229,7 +239,7 @@ def timestamp_from_file(filepath, verbose=True):
         timestamp = timetag_to_timestamp(filepath)
     return timestamp
 
-def load_from_csv(filepath, multiset=False, timestamp=None, verbose=True):
+def load_from_csv(filepath, multiset=False, tstamp=None, verbose=True):
     '''
     This function is made a bit more complicated by the fact that some csvs
     seem to have multiple datasets appended, with a new col_header line as the
@@ -240,20 +250,21 @@ def load_from_csv(filepath, multiset=False, timestamp=None, verbose=True):
     '''
     if verbose:
         print('function \'load_from_csv\' at your service!')
-    if timestamp is None:
-        a = re.search('[0-9]{2}h[0-9]{2}', filepath)
-        if a is None:
-            print('trying to read creation time')
-            timestamp = get_creation_timestamp(filepath)
-        else:
-            print('getting timestamp from filename ' + filepath)
-            timestamp = timetag_to_timestamp(filepath)
+    if tstamp is None:
+        #a = re.search('[0-9]{2}h[0-9]{2}', filepath)
+        #if a is None:
+        print('trying to read creation time')
+        tstamp = get_creation_time(filepath)
+        #else:
+        #    print('getting timestamp from filename ' + filepath)
+        #    timestamp = timetag_to_timestamp(filepath)
+        #    tstamp = timestamp_to_epoch_time(timestamp)
             
     with open(filepath,'r') as f: # read the file!
         lines = f.readlines()
     colheaders = [col.strip() for col in lines[0].split(',')]
     data = get_empty_set(colheaders, title=filepath, 
-                         timestamp=timestamp, data_type='SPEC')
+                         tstamp=tstamp, data_type='SPEC')
     datasets = []
     
     for line in lines[1:]: #put data in lists!
@@ -275,8 +286,8 @@ def load_from_csv(filepath, multiset=False, timestamp=None, verbose=True):
                 numerize(data)
                 datasets += [data.copy()]
                 colheaders = [val.strip() for val in vals]
-                data = get_empty_set(colheaders, 
-                         timestamp=timestamp, data_type='SPEC')
+                data = get_empty_set(colheaders, title=filepath.split(os.sep)[-1],
+                         tstamp=tstamp, data_type='SPEC')
                 continue
             else:
                 print('returning first set.')
@@ -633,7 +644,7 @@ def load_from_file(full_path_name='current', title='file', tstamp=None, timestam
     
     
 def load_EC_set(directory, EC_file=None, tag='01', 
-                  verbose=True, tz=None): 
+                  verbose=True, tz=None, force_sort=False): 
     if verbose:
         print('\n\nfunction \'load_EC_set\' at your service!\n')
     from .combining import synchronize, sort_time
@@ -651,7 +662,7 @@ def load_EC_set(directory, EC_file=None, tag='01',
         except OSError:
             print('problem with ' + f + '. Continuing.')
     EC_data = synchronize(EC_datas, verbose=verbose, append=True, t_zero='first', tz=tz)
-    if 'loop number' in EC_data['data_cols']:
+    if 'loop number' in EC_data['data_cols'] or force_sort:
         sort_time(EC_data, verbose=verbose) #note, sort_time no longer returns!
         
     if verbose:

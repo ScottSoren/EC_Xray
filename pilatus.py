@@ -11,12 +11,18 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 
-calibration_0 = {'direct_beam_x': 	 255,
-                 'direct_beam_y': 	 98,
-                 'Sample_Detector_distance_pixels': 	4085.27,
-                 'Sample_Detector_distance_mm':      702.666}
+calibration_0 = {'direct_beam_x': 	 255, #November and May
+                 'direct_beam_y': 	 98, #November and May
+                 #'Sample_Detector_distance_pixels': 	4085.27, #November
+                 #'Sample_Detector_distance_mm':      702.666, # November
+                 'Sample_Detector_distance_pixels': 	         4108.96, #May
+                 'Sample_Detector_distance_mm': 	         706.741, #May
+                 }
 
-
+#from U:\FYSIK\list-SurfCat\setups\Synchrotron\May2018\spec\Cu1_dry\
+#    calibration\images\b_scott_Cu1_dry_calibration_scan1_0000.raw.pdi
+#ROI_2_X1=255; ROI_2_Y1=98; ROI_2_X2=255; ROI_2_Y2=98;
+# and similarly elsewhere
 
 shape_0 = (195, 487)
 
@@ -136,13 +142,12 @@ class Pilatus:
         
         if self.calibration is not None:
             self.db_pixel = (calibration['direct_beam_y'],  #First dimension is in 
-                             calibration['direct_beam_x'])  #Second dimension is in tth direction
-                             #shape[1] -calibration['direct_beam_x']) 
+                             #calibration['direct_beam_x'])  #Second dimension is in tth direction
+                             shape[1] - calibration['direct_beam_x']) 
                              #subtracted from shape[1] corresponding to the fliplr in read_RAW above
-                             #The Cu(111) peak ligns up without this.
+                             #OLD: 'The Cu(111) peak ligns up without this.'
+                             #18K29: This IS needed, and peaks line up WITH it and with refraction correction
                          
-                
-                             
                              #db_pixel needs to be a tuple to be read as a 2-d index to e.g. im
             #strangely, shape[1] is for dimension x. I still don't get numpy...
             self.R = calibration['Sample_Detector_distance_mm'] * 1e-3 
@@ -175,7 +180,10 @@ class Pilatus:
         
         if type(shape) not in [list, tuple]:
             shape = self.im.shape
-        self.xs = self.dx * (np.arange(shape[0]) - self.db_pixel[0])
+        self.xs = self.dx * (np.arange(shape[0]) - self.db_pixel[0]) 
+        # ^this reflects the db pixel on x. Mistake found 18K30
+        #self.xs = self.dx * (np.arange(shape[0]) - (shape[0] - self.db_pixel[0]))
+        # ^fixes it.
         self.ys = self.dy * (np.arange(shape[1]) - self.db_pixel[1])
     
     def apply_slits(self, xslits=None, yslits=None):
@@ -367,7 +375,7 @@ class Pilatus:
         
     def tth_spectrum(self, stepsize=0.05, tth=None, override=False,
                      slits=True, xslits=None, yslits=None,
-                     out='spectrum', verbose=True,
+                     out='spectrum', verbose=True, weight=None,
                      method='average', min_pixels=10):
         '''
         Returns, as specified by argument 'out', either
@@ -403,26 +411,45 @@ class Pilatus:
         #This does the same as np.digitize does, but without having to define the bins first
         self.map_bin = map_bin
         
+        
+        if weight is None:
+            map_weight = np.ones(self.shape)
+        elif weight == 'gauss':
+            ys = self.ys
+            sigma = np.max(np.abs(ys)) / 3 # such that the furthest pixel is weighted at ~1% of the db pixel
+            ys_weight = np.exp(-ys**2/(2*sigma**2))
+            map_weight = np.tile(ys_weight, (self.shape[0], 1))
+            #self.map_weight = map_weight # for testing
+        
+        weighted_im = self.im * map_weight # the same as self.im for weight=None
+        
         #bins = {'stepsize':stepsize, 'method':method} # It's nicer to only have integer keys
         bins = {}
-        tth_vec = []
-        counts_vec = []
-        for step in range(int(np.min(map_bin)), int(np.max(map_bin)+1)):
+        counts_list = []
+        step_list = range(int(np.min(map_bin)), int(np.max(map_bin)) + 1)
+        # ^ counts from floor(tth_min/stepsize) to floor(tth_max/stepsize)
+        
+        for step in step_list:
             inbin = map_bin == step
             if slits:
                 inbin = np.logical_and(inbin, self.inslits)
            # print([(i,j) for i in xrange for j in yrange if inbin[i,j]])
 
-            pixel_counts = self.im[inbin][:]
+            pixel_counts = weighted_im[inbin][:]
             if method == 'sum':
                 counts = sum(pixel_counts)
             if method == 'average' and len(pixel_counts)<min_pixels:
-                continue
+                #continue
+                counts = 0
             elif method == 'average':
                 counts = np.mean(pixel_counts)
             bins[step] = counts
-            tth_vec += [(step + 1/2) * stepsize]
-            counts_vec += [counts]
+            counts_list += [counts]
+        
+        tth_vec = (np.array(step_list) + 1/2) * stepsize
+        counts_vec = np.array(counts_list)
+        
+        
         
         spectrum = np.array([tth_vec, counts_vec])
         self.bins = bins

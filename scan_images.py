@@ -23,6 +23,7 @@ from .import_data import (load_from_file, read_macro,
                         epoch_time_to_timestamp, timestamp_to_epoch_time)
 from .pilatus import Pilatus, calibration_0, shape_0
 from .XRD import integrate_peak, get_background_line, get_peak_background
+from .XRD import Peak
 
 timestamp_matcher = '([0-9]{2}\:){2}[0-9]{2}'
 
@@ -36,7 +37,7 @@ def get_images(directory, tag, shape=shape_0, calibration=calibration_0,
     except FileNotFoundError:
         print('The directory doesn\'t exist. get_images is returning a blank dictionary.')
         return {}
-    print(tag) # debugging
+    #print(tag) # debugging
     if verbose:
         print(str(len(lslist)) + ' items in ' + directory)
     imagenames = [f for f in lslist if f[-4:]=='.raw' and tag in f]
@@ -135,6 +136,7 @@ class ScanImages:
         csvname = None
         if usecsv:
             if csvfile is None:
+                csv_directory = directory
                 #print(load) # debugging
                 if (tag is None or directory is None) and not load:
                     print('need a csv file name or a directory and a tag!')
@@ -149,16 +151,18 @@ class ScanImages:
                         print(lslist)
                         print('Cound not find a csvname containing ' + tag + ' in ' + directory + '\n(ls above)')  
             else:
-                directory, csvname = os.path.split(csvfile)
+                csv_directory, csvname = os.path.split(csvfile)
+                if len(csv_directory) == 0:
+                    csv_directory = directory
             if csvname is not None:
                 print('Loading Scan from directory = ' + directory +
                       '\n found csvname = ' + str(csvname))   
 
         if name is None:
-            if csvname is not None:
-                name = csvname[:-4] # to drop the .csv
-            elif tag is not None:
+            if tag is not None:
                 name = tag
+            elif csvname is not None:
+                name = csvname[:-4] # to drop the .csv
             elif csvfile is not None:
                 name = csvfile
         
@@ -211,7 +215,7 @@ class ScanImages:
 
         # --------- import csv if requested
         if csvname is not None:
-            csvfilepath = directory + os.sep + csvname
+            csvfilepath = csv_directory + os.sep + csvname
             self.csv_data = load_from_file(csvfilepath, data_type='SPEC', 
                                            timestamp=timestamp, tstamp=tstamp, tz=tz)
             self.csvfilepath = csvfilepath  
@@ -251,7 +255,7 @@ class ScanImages:
             self.data = {'title':name, 'data_type':'spec'}
             self.data['data_cols'] = []
         
-        for col, attr in [('TwoTheta', 'tth'), ('alpha','alpha'), ('t_abs', 'tstamp')]:
+        for col, attr in [('tth_scan', 'tth'), ('alpha','alpha'), ('t_abs', 'tstamp')]:
             try:
                 self.data[col] = np.array([getattr(self.images[i], attr) for i in range(len(self))])
                 self.data['data_cols'] += [col]
@@ -295,7 +299,7 @@ class ScanImages:
                     raise
                 timestamp = a.group()
                 tstamp = timestamp_to_epoch_time(value, tz=tz)
-                print('line 163: timestamp = ' + timestamp) # debugging
+                #print('line 163: timestamp = ' + timestamp) # debugging
                 if timecol is not None:
                     t = a.csv_data[timecol]
                     tstamp = tstamp - t[0]
@@ -306,9 +310,15 @@ class ScanImages:
                     print('got self.tstamp from self.csv_data[\'' + abstimecol + '\'], i.e., abstimecol.')
             except OSError: # a dummy error... I want to actually get the error messages at first
                 pass
+        elif 'tstamp' in self.csv_data:
+            tstamp = self.csv_data['tstamp']
+            print('got tstamp from self.csv_data')
 
         if 't' not in self.data:
-            if 't_abs' in self.data:
+            if timecol is not None:
+                print('getting t from self.csv_data[\'' + timecol + '\'].')
+                t = self.csv_data[timecol]
+            elif 't_abs' in self.data:
                 tstamp = self.data['t_abs'][0]
                 t = self.data['t_abs'] - tstamp
                 if verbose:
@@ -385,7 +395,7 @@ class ScanImages:
         N = len(self)
         for n in range(len(scan)):
             self.images[N+n] = scan.images[n]
-        for col, attr in [('TwoTheta', 'tth'), ('alpha','alpha'), ('t_abs', 'tstamp')]:
+        for col, attr in [('tth_scan', 'tth'), ('alpha','alpha'), ('t_abs', 'tstamp')]:
             self.data[col] = np.array([getattr(self.images[i], attr) for i in range(len(self))])
             self.data['data_cols'] += [col]
         tstamp = self.data['t_abs'][0]
@@ -436,30 +446,44 @@ class ScanImages:
 
  
     
-    #-------------- functions for calculating spectra and derived quantities ----------
+    #-------------- functions for calculating XRD spectra ----------
     
     def get_combined_spectrum(self, stepsize=0.05, override=False,
                               slits=True, xslits=None, yslits=None,
                               method='sum', min_pixels=10, tth=None,
                               scan_method='sum', out='spectrum',
-                              normalize=None):
+                              weight=None,
+                              recalculate=False, normalize=None):
         '''
-        spectrum specs are arguments to Pilatus.tth_spectrum, in module 
-        pilatus.py
+        Calculates conventional tth spectrum (diffractogram) from the pixels
+        of each Pilatus image. If the image spectra have already been
+        calculated, they are used unless override is True.
+        scan_method says whether to add ('sum') or average ('average') the
+        contributions from each image.
+        
+        stepsize, method, min_pixels, xslits, yslits, and weight are
+        all arguments which are passed on to Pilatus.tth_spectrum()
         '''
-        if not hasattr(self, 'images'):
+        
+        if self.verbose:
+            print('\n\nfunction \'get_combined_spectrum\' at your service!\n')
+        
+        if hasattr(self, 'spectrum') and not recalculate:
+            return self.spectrum
+            
+        
+        elif not hasattr(self, 'images'):
             print('scan \'' + self.name + '\' has no images! Can\'t calcualte spectrum')
             return
         
         if self.verbose:
-            print('\n\nfunction \'get_combined_spectrum\' at your service!\n')
             t0 = time.time()
             print('t = 0')
             print('calculating tth spectrum for each of ' + str(len(self)) + 
                   ' images, storing in Pilatus objects, and adding them all up.')
 
         if tth is not None:
-            self.tth = tth
+            self.tth = tthTru
         if normalize:
             try:
                 normalizer = self.data[normalize]
@@ -478,6 +502,7 @@ class ScanImages:
                                                 stepsize=stepsize, method=method,
                                                 min_pixels=min_pixels, tth=tth,
                                                 xslits=xslits, yslits=yslits,
+                                                weight=weight,
                                                 verbose=self.vverbose)
             raw_spectra[i] = self.images[i].spectrum
             if normalize:
@@ -541,14 +566,17 @@ class ScanImages:
 
     
     def get_stacked_spectra(self, stepsize=0.05, override=None,
-                          slits=True, xslits=None, yslits=None,
+                          slits=True, xslits=None, yslits=None, weight=None,
                           method='average', min_pixels=10, tth=None,
                           normalize=None):
         if self.verbose:
             print('\n\nfunction \'get_stacked_spectra\' at your service!\n')
             
         if override is False and hasattr(self, 'spectra') and self.spectra is not None:
-            spectra = self.spectra
+            if hasattr(self, 'spectrab'):
+                spectra = self.spectrab
+            else:
+                spectra = self.spectra
             if self.verbose:
                 print('using the already-calculated image spectra')       
             return spectra
@@ -563,7 +591,8 @@ class ScanImages:
                                                            method=method, tth=tth,
                                                            min_pixels=min_pixels, 
                                                            normalize=normalize,
-                                                           xslits=xslits, yslits=yslits) 
+                                                           xslits=xslits, yslits=yslits,
+                                                           weight=weight) 
         #this generates all the images' spectra, so they're saved when called later.
         tth_vec = combined_spectrum[0]       
         spectrums = []        # collection of the individual spectrum from each image
@@ -613,7 +642,7 @@ class ScanImages:
                     del(im.map_bin)
         except AttributeError: # if there's no images, job is already done.
             pass
-            
+    
     
     def subtract_background(self, background='endpoint', background_type='local',
                             show=None, **kwargs):
@@ -764,8 +793,9 @@ class ScanImages:
                 elif background.shape[0] == 2:
                     b1 = np.interp(spectrumb[0], background[0], background[1], left=0, right=0)
             elif background in ['linear', 'endpoint']:
-                b1 = get_background_line(spectrum, method=background, 
+                b1 = get_background_line(spectrum, method=background,
                                          name='global', out='values', 
+                                         lincutoff=False,
                                          verbose=self.verbose, **kwargs)
             elif type(background) in [int, float, np.float64]:
                 b1 = np.tile(background, np.size(tth_vec))
@@ -793,7 +823,7 @@ class ScanImages:
                         bg_i = bg_i / self.N_contributors[mask] #normalize background to one image
                 elif background in ['linear', 'endpoint']:
                     #print(i) # for debugging
-                    bg_i = get_background_line(spec, method=background, 
+                    bg_i = get_background_line(spec, method=background, mode='match',
                                                name=' image number ' + str(i),
                                                floor=True, out='values', 
                                                verbose=self.vverbose, **kwargs)   
@@ -839,7 +869,63 @@ class ScanImages:
         
         if self.verbose:
             print('\nfunction \'subtract_background\' finished!\n\n')  
+            
+            
+    def correct_for_refraction(self, delta_eff=None, beta_eff=None, alpha=None, delta_tth=None):
+        from .XRD import refraction_correction
+
+
+        try: 
+            corrected = self.corrected
+        except AttributeError:
+            corrected = False
         
+        if corrected:
+            print('scan has already been corrected once for refraction.\n' + 
+                  '... correcting from original angles')
+            tth_0 = self.tth_0.copy()
+        else:
+            tth_0 = self.spectrum[0].copy()
+            self.tth_0 = tth_0
+        
+        if alpha is None:
+            alpha = self.alpha
+            
+        if delta_eff is None:
+            try:
+                delta_eff = self.delta_eff
+            except AttributeError:
+                delta_eff = 5.94e-6
+        if beta_eff is None:
+            try:
+                beta_eff = self.beta_eff
+            except AttributeError:
+                beta_eff = 2.37e-7
+        
+        if delta_tth is None:
+            delta_tth = refraction_correction(alpha=alpha, delta_eff=delta_eff, 
+                                              beta_eff=beta_eff, alpha_c=None)
+        else:
+            print(f'SHIFTING TTH {-delta_tth} DEG!')
+        
+        tth = tth_0 - delta_tth
+        
+        self.data['tth_0'] = tth_0
+        self.data['tth'] = tth
+        
+        self.spectrum[0] = tth
+        try:
+            self.spectrumb[0] = tth
+        except AttributeError:
+            pass
+        self.corrected = True
+        return delta_tth
+        
+        
+
+    #-------------- functions for integrating and characterizing peaks ----------
+
+
     def integrate_spectrum(self, peaks={'Cu_111':([19.65, 20.65], 'brown'),
                                      'CuO_111':([17.55, 18.55], 'k')},
                         override_peaks=False, bg=None,
@@ -984,35 +1070,64 @@ class ScanImages:
         print('\nfunction \'integrate_peaks\' finished!\n\n')
             
         return integrals                     
-
-
     
     
+    def get_peaks(self, peaks):
+        x, y = self.get_combined_spectrum()
+        P = {}
+        for name, peak in peaks.items():
+            xspan, color = peaks[name]
+            try:
+                xspan[-1] - xspan[0]
+            except TypeError:
+                xspan = [xspan, color]
+                color = 'k'
+            P[name] = Peak(x, y, name=name, xspan=xspan, color=color)
+        self.P = P
+        return P
+    
+    def track_peaks(self, peaks):
+        spectra = self.get_stacked_spectra(override=False)
+        x = self.get_combined_spectrum(override=False)[0]
+        N = len(self)
+        P = {}
+        for name, (xspan, color) in peaks.items():
+            P[name] = []
+            for n in range(N):
+                y = spectra[n]
+                P[name] += [Peak(x, y, xspan=xspan, color=color, name=name)]
+        self.P = P
+        return P
+        
     #-------------- functions for plots and videos ----------    
     
     def plot_spectrum(self, bg=None, ax='new', fig=None, color='k', 
-                      show_integrals=None, **kwargs):
+                      show_integrals=None, tthspan=None, **kwargs):
         if ax == 'new':
             fig, ax = plt.subplots()
         if bg is None:
             bg = self.bg
         try:
             if bg:
-                spectrum = self.spectrumb
+                tth, counts = self.spectrumb
             else:
-                spectrum = self.spectrum
+                tth, counts = self.spectrum
         except AttributeError:
             print('spectrum not calculated. Call get_combined_spectrum() or' + 
                   ' get_stacked_spectra(). If you want background subtraction' + 
                   '(bg=True), also call subtract_background()')
             raise        
-        ax.plot(spectrum[0], spectrum[1], color=color, **kwargs)
+        if not tthspan is None:
+            mask = np.logical_and(tthspan[0]<tth, tth<tthspan[-1])
+            tth = tth[mask]
+            counts = counts[mask]
+        ax.plot(tth, counts, color=color, **kwargs)
         ax.set_ylabel('counts: ' + self.scan_method + '-' + self.method)
         ax.set_xlabel('tth / deg')
         
         if show_integrals:
             for (name, (xspan, color)) in self.peaks.items():
-                integrate_peak(spectrum[0], spectrum[1], xspan, ax=ax, 
+                integrate_peak(tth, counts, xspan, ax=ax, 
                                color=None, fill_color=color)        
         if fig is None:
             fig = ax.get_figure()
@@ -1052,6 +1167,7 @@ class ScanImages:
                           method='average', bg=None, min_pixels=10, N_x=300, 
                           ax='new', orientation='xy', logscale=False, zrange=None,
                           aspect='auto', colormap='inferno', 
+                          split_tth=None, splitspec={'color':'g', 'linestyle':'-'},
                           tspan='all'):
         #get the raw spectra
         if bg is None:
@@ -1066,7 +1182,7 @@ class ScanImages:
                   ' get_stacked_spectra(). If you want background subtraction' + 
                   '(bg=True), also call subtract_background()')
             raise
-            
+        #print('spectra_raw = \n' + str(spectra_raw)) # debugging
         # Whatever we're scanning against is called x now.    
         if self.scan_type == 't':
             if self.timecol is None:
@@ -1085,6 +1201,7 @@ class ScanImages:
             x = np.linspace(x_i[0], x_i[-1], num=N_x)
         else:
             x = np.linspace(tspan[0], tspan[-1], num=N_x)
+        #print('interpolating to time vector x = ' + str(x)) # debugging
         spectra = f(x)
 
 
@@ -1094,14 +1211,14 @@ class ScanImages:
         if tthspan is not None:
             mask = np.logical_and(tthspan[0]<tth_vec, tth_vec<tthspan[-1])
             spectra = spectra[:,mask]
-            print(spectra.shape)
+            #print(spectra.shape) # debugging
             tth_vec = tth_vec[mask]
-        
+              
         if logscale:
             spectra = np.log(spectra)
         if zrange is None:
             good = np.logical_and(~np.isnan(spectra), ~np.isinf(spectra))
-            #print(good) # debugging
+            #print('spectra = \n' + str(spectra)) # debugging
             low = np.min(spectra[good])
             high = np.max(spectra[good])
         else:
@@ -1116,12 +1233,30 @@ class ScanImages:
             spectra = np.swapaxes(spectra, 0, 1)
             extent=[x[0], x[-1], tth_vec[0], tth_vec[-1]]
         elif orientation == 'yx':
-            [tth_vec[0], tth_vec[-1], x[0], x[-1]]
-
+            extent=[tth_vec[0], tth_vec[-1], x[0], x[-1]]
+            
+            
         if ax == 'new':
             fig, ax = plt.subplots()
-        ax.imshow(spectra, extent=extent,
-                  aspect=aspect, origin='lower', cmap=colormap)
+            
+        if split_tth:
+            I_split = np.argmax(tth_vec>split_tth)
+            spectra1 = spectra[:I_split, :]
+            extent1 = [x[0], x[-1], tth_vec[0], tth_vec[I_split]]
+            
+            spectra2 = spectra[I_split:, :]
+            extent2 = [x[0], x[-1], tth_vec[I_split], tth_vec[-1]]
+            
+            ax.imshow(spectra1, extent=extent1,
+                      aspect=aspect, origin='lower', cmap=colormap)
+            ax.imshow(spectra2, extent=extent2,
+                      aspect=aspect, origin='lower', cmap=colormap)
+            ax.plot([x[0], x[-1]], [tth_vec[I_split], tth_vec[I_split]], **splitspec)
+            
+        else:
+            ax.imshow(spectra, extent=extent,
+                      aspect=aspect, origin='lower', cmap=colormap)
+            
         if orientation == 'xy':
             ax.set_xlabel(x_str)
             ax.set_ylabel('TwoTheta / deg')            
@@ -1129,6 +1264,7 @@ class ScanImages:
             ax.set_ylabel(x_str)
             ax.set_xlabel('TwoTheta / deg')
         return ax
+    
     
     def plot_experiment(self, *args, **kwargs):
         from .plotting import plot_experiment

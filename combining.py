@@ -439,7 +439,28 @@ def synchronize(data_objects, t_zero='start', append=None, file_number_type='EC'
     return combined_data        
 
 
+
+def align_file_starts(scan):
+    '''
+    Chooses the file# change closest to t=0 in the EC data and sets that
+    file change to t=0.
+    '''
+    if type(scan) is dict:
+        data = scan
+    else:
+        data = scan.data
     
+    file_number = data['file number']
+    file_number_down = np.append(file_number[0], file_number[:-1])
+    I_change = file_number != file_number_down
+    t_change = data['time/s'][I_change]
+    print(t_change) # debugging
+    t_offset = t_change[np.argmin(abs(t_change))]
+    print('Correcting for file start offset of ' + str(t_offset) + ' s.')
+    data['time/s'] -= t_offset
+    
+
+
 def cut(x, y, tspan=None, returnindeces=False, override=False):
     '''
     Vectorized 17L09 for EC_Xray. Should be copied back into EC_MS
