@@ -17,7 +17,7 @@ In lieu of documentation, there are `extensive ipython tutorials available here 
 
 This package was used for and introduced in:
 
-Soren B. Scott,et al. Absence of Oxidized Phases in Cu under CO Reduction Conditions. `ACS Energy Lett, 2019. <http://doi.org/10.1021/acsenergylett.9b00172`_.
+Soren B. Scott,et al. Absence of Oxidized Phases in Cu under CO Reduction Conditions. `ACS Energy Lett, 2019 <http://doi.org/10.1021/acsenergylett.9b00172>`_.
 
 Please cite it if you find `EC_Xray` useful.
 
@@ -29,4 +29,4 @@ Please contact the developer with any questions or suggestions, and consider con
 
 Enjoy!
 
-- Soren B. Scott
+\- Soren B. Scott
