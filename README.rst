@@ -1,5 +1,5 @@
 ===============================================
-`EC_Xray` - Electrochemistry with X-ray package
+``EC_Xray`` - Electrochemistry with X-ray package
 ===============================================
 Python package for analyzing data from and assisting the development of electrochemistry with in-situ synchrotron techniques.
 
@@ -19,11 +19,11 @@ This package was used for and introduced in:
 
 Soren B. Scott,et al. Absence of Oxidized Phases in Cu under CO Reduction Conditions. `ACS Energy Lett, 2019 <http://doi.org/10.1021/acsenergylett.9b00172>`_.
 
-Please cite it if you find `EC_Xray` useful.
+Please cite it if you find ``EC_Xray`` useful.
 
 Project Information
 ===================
-`EC_Xray` is completely free and open source.
+``EC_Xray`` is completely free and open source.
 
 Please contact the developer with any questions or suggestions, and consider contributing to ``ixdat``.
 
