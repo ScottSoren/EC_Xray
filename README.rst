@@ -3,7 +3,7 @@
 ===============================================
 Python package for analyzing data from and assisting the development of electrochemistry with in-situ synchrotron techniques.
 
-The functionality of the package will, if there is interest, be reproduced in The In-situ Experimental Data Tool, ``ixdat``.
+The functionality of the package will, if there is interest, be reproduced in The In-situ Experimental Data Tool, ``ixdat``: https://ixdat.readthedocs.io/
 
 This python package was developed while doing in-situ CO reduction experiments at Stanford Synchrotron Radiation Light Source (SSRL) beamlines 2-1 and 11-2. 
 The scripts here read data as it is output by SSRL's SPEC program (Xray data) and Biologic's EC-Lab (EC data).
@@ -25,7 +25,7 @@ Project Information
 ===================
 ``EC_Xray`` is completely free and open source.
 
-Please contact the developer with any questions or suggestions, and consider contributing to ``ixdat``.
+Please contact the developer with any questions or suggestions, and consider contributing to `ixdat <https://github.com/ixdat/ixdat>`_.
 
 Enjoy!
 
